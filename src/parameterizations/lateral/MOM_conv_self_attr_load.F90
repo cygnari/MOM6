@@ -534,15 +534,14 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                     unowned_temp_i(unowned_source_count) = i_sp
                     unowned_temp_j(unowned_source_count) = j_sp
                     ! find which processor owns i_sp,j_sp
-                    do k = 1, p
+                    kloop2: do k = 1, p
                         if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
                                                         .and. (j_sp <= proc_end_j(k))) then
                             points_needed_from_proc(k) = points_needed_from_proc(k) + 1
                             proc_loc(unowned_source_count) = k
                         end if
-                    enddo
+                    enddo kloop2
                 end if
-                enddo
             end if
         enddo
     enddo
@@ -663,16 +662,16 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                 exit treeloop
             else 
                 found = .false.
-                kloop: do k = 1, sal_ct%tree_struct(j)%panel_point_count
+                kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
                     i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
                     j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
                     if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
                         found = .true.
                         sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
                         sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
-                        exit kloop
+                        exit kloop3
                     end if
-                enddo kloop
+                enddo kloop3
                 if (found) then
                     j = sal_ct%tree_struct(j)%child_panel_1
                 else
@@ -828,7 +827,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     count = 0
     do i = 1, p
-        do j = 1, points_to_get_proc(i)
+        do j = 1, sal_ct%points_to_get_proc(i)
             count = count + 1
             e_ssh(count) = points_received(j, i)
         enddo
@@ -1070,7 +1069,7 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
     real, intent(inout) :: sal_x(:,:), sal_y(:,:)
-    real, intent(in) :: e_ssh(:), eta(:)
+    real, intent(in) :: e_ssh(:), eta(:,:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y
 
