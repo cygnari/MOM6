@@ -7,7 +7,7 @@ use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here
 
 implicit none ; private
 
-public conv_initialize, calc_conv_SAL_grad
+public sal_conv_init, sal_conv_eval
 
 #include <MOM_memory.h>
 
@@ -181,13 +181,14 @@ end function contains_point
 
 subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh)
     ! constructs cubed sphere tree of points
-    type(tree_panel), allocatable, intent(out) :: tree_panels(:)
+    type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
     integer, intent(in) :: i_count, j_count, cluster_thresh
     real, intent(in) :: x(:,:), y(:,:), z(:,:)
-    real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta
+    real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
     integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
     integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
+    integer :: which_panel
 
     pi = 4.D0*DATAN(1.D0)
     point_count = i_count*j*count
@@ -204,7 +205,8 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
         tree_panels_temp(i)%min_eta = -pi/4.0
         tree_panels_temp(i)%mid_eta = 0.0
         tree_panels_temp(i)%max_eta = pi/4.0
-        allocate(tree_panels_temp(i)%points_inside(point_count))
+        allocate(tree_panels_temp(i)%points_inside_i(point_count))
+        allocate(tree_panels_temp(i)%points_inside_j(point_count))
         tree_panels_temp(i)%panel_point_count = 0
         curr_loc(i) = 0
     enddo
@@ -289,9 +291,9 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
                 ! loop through points contained in parent panel, assign to sub panels
                 index_i = tree_panels_temp(i)%points_inside_i(j)
                 index_j = tree_panels_temp(i)%points_inside_j(j)
-                xval = xs(index_i, index_j)
-                yval = ys(index_i, index_j)
-                zval = zs(index_i, index_j)
+                xval = x(index_i, index_j)
+                yval = y(index_i, index_j)
+                zval = z(index_i, index_j)
                 call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
                 if (xi < mid_xi) then
                     if (eta < mid_eta) then
@@ -358,7 +360,7 @@ end subroutine tree_traversal
 subroutine assign_points_to_panels(tree_panels, x, y, z, i_count, j_count, points_panels, levs)
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:,:), y(:,:), z(:,:)
-    integer, intent(in) :: j_count, j_count, levs
+    integer, intent(in) :: j_count i_count, levs
     integer, intent(inout) :: points_panels(:,:,:)
     integer :: level, i, j, k
     real :: xco, yco, zco
@@ -390,10 +392,9 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:,:), y(:,:), z(:,:), theta
-    integer, intent(in) :: x, y, z
     integer, allocatable :: source_index(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
-    integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, k, l
+    integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, l
     real :: xco, yco, zco, xs, ys, zs, dist
 
     allocate(source_index(size(tree_panels)))
@@ -465,7 +466,7 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
 end subroutine interaction_list_compute
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
-    type(sal_ct), intent(inout) :: sal_ct
+    type(sal_conv_type), intent(inout) :: sal_ct
     real, intent(in) :: xg(:,:), yg(:,:), zg(:,:)
     ! integer, intent(in) :: isg, ieg, jsg, jeg
     type(ocean_grid_type), intent(in) :: G
@@ -477,7 +478,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     integer, allocatable :: points_from_proc_j(:,:), points_needed_from_procs(:,:), points_to_give_proc(:)
     integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:), pelist(:)
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:)
-    bool :: found
+    logical :: found
 
     p = sal_ct%p
     id = sal_ct%id
@@ -529,8 +530,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                     unowned_temp_j(unowned_source_count) = j_sp
                     ! find which processor owns i_sp,j_sp
                     do k = 1, p
-                        if (i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
-                                .and. (j_sp <= proc_end_j(k)) then
+                        if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
+                                                        .and. (j_sp <= proc_end_j(k))) then
                             points_needed_from_proc(k) = points_needed_from_proc(k) + 1
                             proc_loc(unowned_source_count) = k
                         end if
@@ -937,9 +938,9 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
     enddo
 end subroutine interp_vals_bli
 
-subroutine proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
+subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     type(SAL_conv_type), intent(in) :: sal_ct
-    real, intent(in) :: eta(:)
+    real, intent(in) :: sshs(:)
     real, intent(inout) :: proxy_source_weights(:)
     type(ocean_grid_type), intent(in) :: G
     integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m
@@ -947,7 +948,7 @@ subroutine proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
     real, allocatable:: basis_vals(:,:)
 
     pi = 4.0*DATAN(1.0)
-    isc = G%isc; iec = G%iec; jsc = G%jsc, jec = G%jec
+    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     r2 = G%Rad_Earth ** 2
 
     do j = jsc, jec
@@ -959,7 +960,7 @@ subroutine proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
             y = sin(colat)*sin(lon)
             z = cos(colat)
             a = G%areaT(i, j)/r2
-            ssh = eta(i, j)
+            ssh = sshs(i, j)
             panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
                 i_t = sal_ct%points_panels(k,i,j)
                 if (i_t == -1) then
@@ -1061,7 +1062,7 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     real, intent(inout) :: sal_x(:), sal_y(:)
     real, intent(in) :: e_ssh(:), eta(:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj
-    real :: pi, lat lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y
+    real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
