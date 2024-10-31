@@ -11,6 +11,7 @@ use MOM_spherical_harmonics, only : spherical_harmonics_init, spherical_harmonic
 use MOM_spherical_harmonics, only : spherical_harmonics_forward, spherical_harmonics_inverse
 use MOM_spherical_harmonics, only : sht_CS, order2index, calc_lmax
 use MOM_load_love_numbers,   only : Love_Data
+use MOM_conv_self_attr_load, only : sal_conv_type, sal_conv_eval
 
 implicit none ; private
 

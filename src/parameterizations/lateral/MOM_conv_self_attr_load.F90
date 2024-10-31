@@ -3,7 +3,7 @@ module MOM_conv_self_attr_load
 use MOM_error_handler,   only : MOM_error, FATAL, WARNING
 use MOM_grid,            only : ocean_grid_type, get_global_grid_size
 use MOM_file_parser,     only : get_param
-use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast
+use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast, sync_PEs
 
 implicit none ; private
 
@@ -623,6 +623,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         call broadcast(points_to_give_proc_j(:,i), points_to_give_proc(i), i, pelist)
     enddo
 
+    call sync_PEs()
+
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
     sal_ct%points_to_give_proc = points_to_give_proc
@@ -814,6 +816,8 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
         pelist(2) = i
         call broadcast(points_received(:,i), points_to_get_proc(i), i, pelist)
     enddo
+
+    call sync_PEs()
 
     count = 0
     do i = 1, p
