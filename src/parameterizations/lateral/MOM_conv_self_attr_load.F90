@@ -4,6 +4,7 @@ use MOM_error_handler,   only : MOM_error, FATAL, WARNING
 use MOM_grid,            only : ocean_grid_type, get_global_grid_size
 use MOM_file_parser,     only : get_param
 use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast, sync_PEs
+use MOM_coms,            only : reproducing_sum
 
 implicit none ; private
 
@@ -522,14 +523,15 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             if (((i_sp < isg) .or. (i_sp > ieg)) .and. ((j_sp < jsg) .or. (j_sp > jeg))) then
                 ! unowned
                 found = .false.
-                do k = 1, unowned_source_count
+                kloop: do k = 1, unowned_source_count
                     if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
                         found = .true.
                     end if
+                enddo kloop
                 if (.not. found) then
                     ! new unowned point
                     unowned_source_count = unowned_source_count + 1
-                    unowend_temp_i(unowned_source_count) = i_sp
+                    unowned_temp_i(unowned_source_count) = i_sp
                     unowned_temp_j(unowned_source_count) = j_sp
                     ! find which processor owns i_sp,j_sp
                     do k = 1, p
@@ -551,7 +553,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(e_ys(unowned_source_count))
     allocate(e_zs(unowned_source_count))
 
-    sal_ct%unowned_sources = unonwed_source_count
+    sal_ct%unowned_sources = unowned_source_count
 
     max_p = 0
     do i = 1, p
@@ -578,7 +580,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
                 count = count + 1
                 unowned_sources_i(count) = i_sp
-                unwoned_sources_j(count) = j_sp
+                unowned_sources_j(count) = j_sp
                 e_xs(count) = xg(i_sp, j_sp)
                 e_ys(count) = yg(i_sp, j_sp)
                 e_zs(count) = zg(i_sp, j_sp)
@@ -686,7 +688,7 @@ subroutine sal_conv_init(sal_ct, G)
     ! call only once
     ! does tree traversal, interaction list computation, sets up communication patterns
     type(SAL_conv_type), intent(out) :: sal_ct
-    type(ocean_grid_type), intent(in) :: G ! ocean grid
+    type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
     integer :: proc_count, is, ie, js, je, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
     integer :: max_level, proc_rank
@@ -694,10 +696,11 @@ subroutine sal_conv_init(sal_ct, G)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
     real :: lat, lon, colat, x, y, z, pi
 
-    call get_param(param_file, mdl, "SHT_REPRODUCING_SUM", sal_ct%reprod_sum, &
-                   "If true, use reproducing sums (invariant to PE layout) in inverse transform "// &
-                   "of proxy source weights. Otherwise use a simple sum of floating point numbers. ", &
-                   default=.False.)
+    ! fix this
+    ! call get_param(param_file, mdl, "SHT_REPRODUCING_SUM", sal_ct%reprod_sum, &
+    !                "If true, use reproducing sums (invariant to PE layout) in inverse transform "// &
+    !                "of proxy source weights. Otherwise use a simple sum of floating point numbers. ", &
+    !                default=.False.)
 
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
@@ -740,16 +743,16 @@ subroutine sal_conv_init(sal_ct, G)
                 xc(i, j) = x
                 yc(i, j) = y
                 zc(i, j) = z
-                xg(i+ig_ff, j+jg_off) = x
-                yg(i+ig_ff, j+jg_off) = y
-                zg(i+ig_ff, j+jg_off) = z
+                xg(i+ig_off, j+jg_off) = x
+                yg(i+ig_off, j+jg_off) = y
+                zg(i+ig_off, j+jg_off) = z
             else ! land point
                 xc(i, j) = -2.0
                 yc(i, j) = -2.0
                 zc(i, j) = -2.0
-                xg(i+ig_ff, j+jg_off) = -2.0
-                yg(i+ig_ff, j+jg_off) = -2.0
-                zg(i+ig_ff, j+jg_off) = -2.0
+                xg(i+ig_off, j+jg_off) = -2.0
+                yg(i+ig_off, j+jg_off) = -2.0
+                zg(i+ig_off, j+jg_off) = -2.0
             end if
         enddo
     enddo
@@ -777,11 +780,11 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     ! does the necessary communication of sshs to perform PP interactions
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
-    real, intent(in) :: eta(:)
+    real, intent(in) :: eta(:,:)
     real, intent(inout) :: e_ssh(:)
     integer :: max_give, max_get, p, id, i, j, i_s, j_s, i_off, j_off, count
     real, allocatable :: points_to_give(:,:), points_received(:,:)
-    real :: area, rad
+    real :: area, rad2
     integer, allocatable :: pelist(:)
 
     p = sal_ct%p; id = sal_ct%id
@@ -813,19 +816,19 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     do i = 1, p 
         pelist(2) = i
-        call broadcast(points_to_give(:,i), points_to_give_proc(i), id, pelist)
+        call broadcast(points_to_give(:,i), sal_ct%points_to_give_proc(i), id, pelist, .false.)
     enddo
 
     do i = 1, p
         pelist(2) = i
-        call broadcast(points_received(:,i), points_to_get_proc(i), i, pelist)
+        call broadcast(points_received(:,i), sal_ct%points_to_get_proc(i), i, pelist, .false.)
     enddo
 
     call sync_PEs()
 
     count = 0
     do i = 1, p
-        do j = 1, poitns_to_get_proc(i)
+        do j = 1, points_to_get_proc(i)
             count = count + 1
             e_ssh(count) = points_received(j, i)
         enddo
@@ -943,7 +946,7 @@ end subroutine interp_vals_bli
 
 subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     type(SAL_conv_type), intent(in) :: sal_ct
-    real, intent(in) :: sshs(:)
+    real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
     type(ocean_grid_type), intent(in) :: G
     integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m
@@ -970,11 +973,11 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                     exit panelloop
                 else 
                     shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                    min_xi = sal_ct%tree_panels(i_t)%min_xi
-                    max_xi = sal_ct%tree_panels(i_t)%max_xi
-                    min_eta = sal_ct%tree_panels(i_t)%min_eta
-                    max_eta = sal_ct%tree_panels(i_t)%max_eta
-                    call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_panels(i_t)%face)
+                    min_xi = sal_ct%tree_struct(i_t)%min_xi
+                    max_xi = sal_ct%tree_struct(i_t)%max_xi
+                    min_eta = sal_ct%tree_struct(i_t)%min_eta
+                    max_eta = sal_ct%tree_struct(i_t)%max_eta
+                    call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
                     call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
                     offset = 0
                     do l = 1, sal_ct%interp_degree+1
@@ -987,7 +990,11 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
             enddo panelloop
         enddo
     enddo
-    call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
+    if (sal_ct%reprod_sum) then
+        call sum_across_PEs(proxy_source_weights, size(proxy_source_weights)) ! replace 
+    else 
+        call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
+    end if
 end subroutine proxy_source_compute
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y)
@@ -1018,7 +1025,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
     real, intent(in) :: proxy_source_weights(:)
-    real, intent(inout) :: sal_x, sal_y
+    real, intent(inout) :: sal_x(:,:), sal_y(:,:)
     integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset
     real, allocatable :: source_proxy_weights(:), cheb_xi(:), cheb_eta(:)
     real :: min_xi, max_xi, min_eta, max_eta, x, y, z, lat, lon, xi, eta, colat, pi
@@ -1062,7 +1069,7 @@ end subroutine pc_interaction_compute
 subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
-    real, intent(inout) :: sal_x(:), sal_y(:)
+    real, intent(inout) :: sal_x(:,:), sal_y(:,:)
     real, intent(in) :: e_ssh(:), eta(:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y
@@ -1107,18 +1114,18 @@ end subroutine pp_interaction_compute
 subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
     type(SAL_conv_type), intent(in) :: sal_ct ! conv SAL data struct
     type(ocean_grid_type), intent(in) :: G ! ocean grid
-    real, intent(in) :: eta(:) ! ssh
-    real, intent(inout) :: sal_x(:), sal_y(:) ! x,y components of SAL potential gradient
+    real, intent(in) :: eta(:,:) ! ssh
+    real, intent(inout) :: sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
     real, allocatable :: e_ssh(:), proxy_source_weights(:)
-    integer :: size
+    integer :: source_size
 
     ! do SSH communication needed for PP interactions
     allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
     call ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     ! compute proxy source weights
-    size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
-    allocate(proxy_source_weights(size), source=0.0)
+    source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
+    allocate(proxy_source_weights(source_size), source=0.0)
     call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions
