@@ -189,6 +189,7 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
     integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
     integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
     integer :: which_panel
+    real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
     point_count = i_count*j*count
@@ -346,13 +347,13 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
         ! compute the furthest distance from panel center to vertex for each panel
         call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
         call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
-        d1 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
+        d1 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
         call xyz_from_xieta(y1, y2, y3, min_xi, max_eta, tree_panels(i)%face)
-        d2 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
+        d2 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
         call xyz_from_xieta(y1, y2, y3, max_xi, max_eta, tree_panels(i)%face)
-        d3 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
+        d3 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
         call xyz_from_xieta(y1, y2, y3, max_xi, min_eta, tree_panels(i)%face)
-        d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
+        d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
     enddo
 end subroutine tree_traversal
@@ -360,7 +361,7 @@ end subroutine tree_traversal
 subroutine assign_points_to_panels(tree_panels, x, y, z, i_count, j_count, points_panels, levs)
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:,:), y(:,:), z(:,:)
-    integer, intent(in) :: j_count i_count, levs
+    integer, intent(in) :: j_count, i_count, levs
     integer, intent(inout) :: points_panels(:,:,:)
     integer :: level, i, j, k
     real :: xco, yco, zco
@@ -392,10 +393,11 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:,:), y(:,:), z(:,:), theta
+    integer, intent(in) :: ic, jc
     integer, allocatable :: source_index(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, l
-    real :: xco, yco, zco, xs, ys, zs, dist
+    real :: xco, yco, zco, xs, ys, zs, dist, separation
 
     allocate(source_index(size(tree_panels)))
     allocate(interaction_lists_temp(128*ic*jc))
@@ -405,7 +407,7 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
     pc_count = 0
 
     do j = 1, jc
-        do i = 1, ic
+        iloop: do i = 1, ic
             tt_count = 6
             do k = 1, 6
                 source_index(k) = k
@@ -414,7 +416,7 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
             xco = x(i, j)
             yco = y(i, j)
             zco = z(i, j)
-            do while (curr_loc <= tt_count) ! go through source panels
+            panelloop: do while (curr_loc <= tt_count) ! go through source panels
                 i_s = source_index(curr_loc)
                 c_s = tree_panels(i_s)%panel_point_count
                 if (c_s > 0) then ! cluster has points
@@ -437,16 +439,17 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
                             interaction_lists_temp(interaction_count)%index_source = i_s
                             interaction_lists_temp(interaction_count)%interact_type = 0
                         else ! refine source panel
-                            source_index(tree_traverse_count+1) = tree_panels(i_s)%child_panel_1
-                            source_index(tree_traverse_count+2) = tree_panels(i_s)%child_panel_2
-                            source_index(tree_traverse_count+3) = tree_panels(i_s)%child_panel_3
-                            source_index(tree_traverse_count+4) = tree_panels(i_s)%child_panel_4
-                            tree_traverse_count = tree_traverse_count + 4
+                            source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
+                            source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
+                            source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
+                            source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
+                            tt_count = tt_count + 4
+                        end if
                     end if
                 end if
                 curr_loc = curr_loc + 1
-            enddo
-        enddo
+            enddo panelloop
+        enddo iloop
     enddo
 
     allocate(pc_interactions(pc_count))
