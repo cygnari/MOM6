@@ -982,10 +982,10 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                 z = cos(colat)
                 a = G%areaT(i, j)/r2
                 ssh = sshs(i, j)
-                panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
+                panelloop1: do k = 1, size(sal_ct%points_panels(:,i,j))
                     i_t = sal_ct%points_panels(k,i,j)
                     if (i_t == -1) then
-                        exit panelloop
+                        exit panelloop1
                     else 
                         shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
                         min_xi = sal_ct%tree_struct(i_t)%min_xi
@@ -1003,7 +1003,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                             enddo
                         enddo
                     end if
-                enddo panelloop
+                enddo panelloop1
             enddo
         enddo
         j = size(proxy_source_weights)
@@ -1019,10 +1019,10 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                 z = cos(colat)
                 a = G%areaT(i, j)/r2
                 ssh = sshs(i, j)
-                panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
+                panelloop2: do k = 1, size(sal_ct%points_panels(:,i,j))
                     i_t = sal_ct%points_panels(k,i,j)
                     if (i_t == -1) then
-                        exit panelloop
+                        exit panelloop2
                     else 
                         shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
                         min_xi = sal_ct%tree_struct(i_t)%min_xi
@@ -1039,7 +1039,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                             enddo
                         enddo
                     end if
-                enddo panelloop
+                enddo panelloop2
             enddo
         enddo
 
