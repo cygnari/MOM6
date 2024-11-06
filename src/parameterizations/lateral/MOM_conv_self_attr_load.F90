@@ -950,48 +950,99 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     type(ocean_grid_type), intent(in) :: G
     integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m
     real :: x, y, z, a, ssh, lat, lon, colat, pi, r2, min_xi, max_xi, min_eta, max_eta, xi, eta
-    real, allocatable:: basis_vals(:,:)
+    real, allocatable:: basis_vals(:,:), proxy_source_weights_sep(:,:,:)
+    integer, allocatable :: points_in_panel(:), pos_in_array(:)
+    real :: sum_tot
 
     pi = 4.0*DATAN(1.0)
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     r2 = G%Rad_Earth ** 2
-
-    do j = jsc, jec
-        do i = isc, iec
-            lat = G%geoLatT(i, j)
-            lon = G%geoLonT(i, j)
-            colat = 0.5*pi-lat
-            x = sin(colat)*cos(lon)
-            y = sin(colat)*sin(lon)
-            z = cos(colat)
-            a = G%areaT(i, j)/r2
-            ssh = sshs(i, j)
-            panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
-                i_t = sal_ct%points_panels(k,i,j)
-                if (i_t == -1) then
-                    exit panelloop
-                else 
-                    shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                    min_xi = sal_ct%tree_struct(i_t)%min_xi
-                    max_xi = sal_ct%tree_struct(i_t)%max_xi
-                    min_eta = sal_ct%tree_struct(i_t)%min_eta
-                    max_eta = sal_ct%tree_struct(i_t)%max_eta
-                    call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
-                    call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
-                    offset = 0
-                    do l = 1, sal_ct%interp_degree+1
-                        do m = 1, sal_ct%interp_degree+1
-                            offset=offset+1
-                            proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(m, l)*ssh*a
-                        enddo
-                    enddo
-                end if
-            enddo panelloop
-        enddo
-    enddo
+    
     if (sal_ct%reprod_sum) then
-        call sum_across_PEs(proxy_source_weights, size(proxy_source_weights)) ! replace 
+        allocate(points_in_panel(6), source=0)
+        do j = jsc, jec
+            do i = isc, iec
+                k = sal_ct%points_panels(1, i, j)
+                points_in_panel(k) = points_in_panel(k) + 1
+            enddo
+        enddo
+        l = 0
+        do i = 1, 6
+            l = max(l, points_in_panel(i))
+        enddo
+        allocate(proxy_source_weights_sep(1, l, size(proxy_source_weights)), source=0.0)
+        allocate(pos_in_array(size(proxy_source_weights)), source=0)
+        do j = jsc, jec
+            do i = isc, iec
+                lat = G%geoLatT(i, j)
+                lon = G%geoLonT(i, j)
+                colat = 0.5*pi-lat
+                x = sin(colat)*cos(lon)
+                y = sin(colat)*sin(lon)
+                z = cos(colat)
+                a = G%areaT(i, j)/r2
+                ssh = sshs(i, j)
+                panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
+                    i_t = sal_ct%points_panels(k,i,j)
+                    if (i_t == -1) then
+                        exit panelloop
+                    else 
+                        shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+                        min_xi = sal_ct%tree_struct(i_t)%min_xi
+                        max_xi = sal_ct%tree_struct(i_t)%max_xi
+                        min_eta = sal_ct%tree_struct(i_t)%min_eta
+                        max_eta = sal_ct%tree_struct(i_t)%max_eta
+                        call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
+                        call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
+                        offset = 0
+                        do l = 1, sal_ct%interp_degree+1
+                            do m = 1, sal_ct%interp_degree+1
+                                offset=offset+1
+                                pos_in_array(shift+offset) = pos_in_array(shift+offset)+1
+                                proxy_source_weights_sep(1, pos_in_array(shift+offset), shift+offset)=basis_vals(m,l)*ssh*a
+                            enddo
+                        enddo
+                    end if
+                enddo panelloop
+            enddo
+        enddo
+        j = size(proxy_source_weights)
+        sum_tot = reproducing_sum(proxy_source_weights_sep(:,:,1:j), sums=proxy_source_weights(1:j))
     else 
+        do j = jsc, jec
+            do i = isc, iec
+                lat = G%geoLatT(i, j)
+                lon = G%geoLonT(i, j)
+                colat = 0.5*pi-lat
+                x = sin(colat)*cos(lon)
+                y = sin(colat)*sin(lon)
+                z = cos(colat)
+                a = G%areaT(i, j)/r2
+                ssh = sshs(i, j)
+                panelloop: do k = 1, size(sal_ct%points_panels(:,i,j))
+                    i_t = sal_ct%points_panels(k,i,j)
+                    if (i_t == -1) then
+                        exit panelloop
+                    else 
+                        shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+                        min_xi = sal_ct%tree_struct(i_t)%min_xi
+                        max_xi = sal_ct%tree_struct(i_t)%max_xi
+                        min_eta = sal_ct%tree_struct(i_t)%min_eta
+                        max_eta = sal_ct%tree_struct(i_t)%max_eta
+                        call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
+                        call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
+                        offset = 0
+                        do l = 1, sal_ct%interp_degree+1
+                            do m = 1, sal_ct%interp_degree+1
+                                offset=offset+1
+                                proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(m, l)*ssh*a
+                            enddo
+                        enddo
+                    end if
+                enddo panelloop
+            enddo
+        enddo
+
         call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
     end if
 end subroutine proxy_source_compute
