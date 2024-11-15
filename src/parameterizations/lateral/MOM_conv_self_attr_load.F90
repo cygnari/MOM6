@@ -180,21 +180,23 @@ logical function contains_point(self, x, y, z) result(contains)
     end if
 end function contains_point
 
-subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh)
+subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     ! constructs cubed sphere tree of points
+    type(ocean_grid_type), intent(in) :: G ! ocean grid
     type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
-    integer, intent(in) :: i_count, j_count, cluster_thresh
-    real, intent(in) :: x(:,:), y(:,:), z(:,:)
+    integer, intent(in) :: cluster_thresh
+    real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! these are the size of the global domain
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
     integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
     integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
-    integer :: which_panel
+    integer :: which_panel, imax, jmax, ic, jc
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
-    point_count = i_count*j*count
-    allocate(tree_panels_temp(max(6, i_count*j_count)))
+    call get_global_grid_size(G, imax, jmax)
+    point_count = imax*jmax
+    allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
 
     ! initialize the six top level cube panels
@@ -213,11 +215,11 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
         curr_loc(i) = 0
     enddo
 
-    do j=1, j_count
-        do i=1, i_count
-            xval = x(i, j)
-            yval = y(i, j)
-            zval = z(i, j)
+    do j=1, jmax
+        do i=1, imax
+            xval = xg(i, j)
+            yval = yg(i, j)
+            zval = zg(i, j)
             if ((xval > -2.0) .and. (yval > -2.0) .and. (zval > -2.0)) then
                 ! points with x/y/z=-2 are land points 
                 face = face_from_xyz(xval, yval, zval)
@@ -359,47 +361,57 @@ subroutine tree_traversal(tree_panels, x, y, z, i_count, j_count, cluster_thresh
     enddo
 end subroutine tree_traversal
 
-subroutine assign_points_to_panels(tree_panels, x, y, z, i_count, j_count, points_panels, levs)
+subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
+    type(ocean_grid_type), intent(in) :: G
     type(cube_panel), intent(in) :: tree_panels(:)
-    real, intent(in) :: x(:,:), y(:,:), z(:,:)
-    integer, intent(in) :: j_count, i_count, levs
+    real, intent(in) :: x(:,:), y(:,:), z(:,:) ! size of computational domain
+    integer, intent(in) :: levs
     integer, intent(inout) :: points_panels(:,:,:)
-    integer :: level, i, j, k
+    integer :: level, i, j, k, isg, ieg, jsg, jeg, ic, jc
     real :: xco, yco, zco
 
-    do j=1, j_count
-        do i = 1, i_count
+    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    ic = iec-isc+1; jc = jec-jsc+1
+
+    do j=1, jc
+        do i = 1, ic
             level = 1
             k = 1
             xco = x(i, j)
             yco = y(i, j)
             zco = z(i, j)
-            treeloop: do ! loop over tree panels
-                if (k == -1) then
-                    exit treeloop
-                else if (tree_panels(k)%contains_point(xco, yco, zco)) then
-                    ! point i,j is contained in panel k
-                    points_panels(level, i, j) = k
-                    level = level + 1
-                    k = tree_panels(k)%child_panel_1
-                else
-                    k = k + 1
-                end if
-            enddo treeloop
+            if ((xco > -2.0) .and. (yco > -2.0) .and. (zco > -2.0)) then
+                treeloop: do ! loop over tree panels
+                    if (k == -1) then
+                        exit treeloop
+                    else if (tree_panels(k)%contains_point(xco, yco, zco)) then
+                        ! point i,j is contained in panel k
+                        ! point i,j is i+isc-1, j+jsc-1
+                        points_panels(level, i, j) = k
+                        level = level + 1
+                        k = tree_panels(k)%child_panel_1
+                    else
+                        k = k + 1
+                    end if
+                enddo treeloop
+            end if
         enddo
     enddo
 end subroutine assign_points_to_panels
 
-subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panels, x, y, z, ic, jc, theta)
+subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_panels, x, y, z, theta)
+    type(ocean_grid_type), intent(in) :: G
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
-    real, intent(in) :: x(:,:), y(:,:), z(:,:), theta
-    integer, intent(in) :: ic, jc
+    real, intent(in) :: x(:,:), y(:,:), z(:,:), theta ! x, y, z are the computational domain
     integer, allocatable :: source_index(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, l
+    integer :: isc, iec, jsc, jec, ic, jc
     real :: xco, yco, zco, xs, ys, zs, dist, separation
 
+    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    ic = iec-isc+1; jc = jec-jsc+1
     allocate(source_index(size(tree_panels)))
     allocate(interaction_lists_temp(128*ic*jc))
 
@@ -417,39 +429,41 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
             xco = x(i, j)
             yco = y(i, j)
             zco = z(i, j)
-            panelloop: do while (curr_loc <= tt_count) ! go through source panels
-                i_s = source_index(curr_loc)
-                c_s = tree_panels(i_s)%panel_point_count
-                if (c_s > 0) then ! cluster has points
-                    call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
-                    dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0_8), 1.0_8))
-                    separation = tree_panels(i_s)%radius/dist
-                    if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
-                        interaction_count = interaction_count + 1
-                        pc_count = pc_count + 1
-                        interaction_lists_temp(interaction_count)%index_target_i = i
-                        interaction_lists_temp(interaction_count)%index_target_j = j
-                        interaction_lists_temp(interaction_count)%index_source = i_s
-                        interaction_lists_temp(interaction_count)%interact_type = 1
-                    else  ! not well separated
-                        if (tree_panels(i_s)%is_leaf) then ! leaf, do pp interaction
+            if ((xco > -2.0) .and. (yco > -2.0) .and. (zco > -2.0)) then
+                panelloop: do while (curr_loc <= tt_count) ! go through source panels
+                    i_s = source_index(curr_loc)
+                    c_s = tree_panels(i_s)%panel_point_count
+                    if (c_s > 0) then ! cluster has points
+                        call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
+                        dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0_8), 1.0_8))
+                        separation = tree_panels(i_s)%radius/dist
+                        if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
                             interaction_count = interaction_count + 1
-                            pp_count = pp_count + 1
-                            interaction_lists_temp(interaction_count)%index_target_i = i
-                            interaction_lists_temp(interaction_count)%index_target_j = j
+                            pc_count = pc_count + 1
+                            interaction_lists_temp(interaction_count)%index_target_i = i+isc-1
+                            interaction_lists_temp(interaction_count)%index_target_j = j+jsc-1
                             interaction_lists_temp(interaction_count)%index_source = i_s
-                            interaction_lists_temp(interaction_count)%interact_type = 0
-                        else ! refine source panel
-                            source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
-                            source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
-                            source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
-                            source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
-                            tt_count = tt_count + 4
+                            interaction_lists_temp(interaction_count)%interact_type = 1
+                        else  ! not well separated
+                            if (tree_panels(i_s)%is_leaf) then ! leaf, do pp interaction
+                                interaction_count = interaction_count + 1
+                                pp_count = pp_count + 1
+                                interaction_lists_temp(interaction_count)%index_target_i = i+isc-1
+                                interaction_lists_temp(interaction_count)%index_target_j = j+jsc-1
+                                interaction_lists_temp(interaction_count)%index_source = i_s
+                                interaction_lists_temp(interaction_count)%interact_type = 0
+                            else ! refine source panel
+                                source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
+                                source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
+                                source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
+                                source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
+                                tt_count = tt_count + 4
+                            end if
                         end if
                     end if
-                end if
-                curr_loc = curr_loc + 1
-            enddo panelloop
+                    curr_loc = curr_loc + 1
+                enddo panelloop
+            end if
         enddo iloop
     enddo
 
@@ -471,11 +485,11 @@ end subroutine interaction_list_compute
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     type(sal_conv_type), intent(inout) :: sal_ct
-    real, intent(in) :: xg(:,:), yg(:,:), zg(:,:)
-    ! integer, intent(in) :: isg, ieg, jsg, jeg
+    real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! computational domain size
     type(ocean_grid_type), intent(in) :: G
     integer :: p, id, unowned_source_count, pp_count, i, i_s, j, i_sp, j_sp, k, max_p, pl, count
-    integer :: isg, ieg, jsg, jeg, isc, iec, jsc, jec, i_off, j_off, i_sp2, j_sp2
+    integer :: isg, ieg, jsg, jeg, isc, iec, jsc, jec, i_off, j_off, i_sp2, j_sp2, isdg, iedg, jsdg, jedg
+    integer :: idgo, jdgo
     integer, allocatable :: proc_start_i(:), proc_start_j(:), proc_end_i(:), proc_end_j(:)
     integer, allocatable :: unowned_temp_i(:), unowned_temp_j(:), unowned_sources_i(:), unowned_sources_j(:)
     integer, allocatable :: points_needed_from_proc(:), points_from_proc_i(:,:), proc_loc(:), temp_locs(:)
@@ -489,6 +503,9 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    idgo = G%idg_offset; jdgo = G%jdg_offset
+    isdg = G%isd_global; jsdg = G%jsd_global
+    iedg = G%ied+idgo, jedg = G%jed+jdgo
     i_off = isg-isc; j_off = jsg-jsc
 
     allocate(proc_start_i(p), source=0)
@@ -520,8 +537,9 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             ! loop over points in source panel, check if owned
             i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
             j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
-            if (((i_sp < isg) .or. (i_sp > ieg)) .and. ((j_sp < jsg) .or. (j_sp > jeg))) then
-                ! unowned
+            ! check if point is in the data domain
+            if (((i_sp < isdg) .or. (i_sp > iedg)) .and. ((j_sp < jsdg) .or. (j_sp > jedg))) then
+                ! outside of data domain
                 found = .false.
                 kloop: do k = 1, unowned_source_count
                     if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
@@ -642,10 +660,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         do j = 1, sal_ct%tree_struct(i)%panel_point_count
             i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
             j_sp = sal_ct%tree_struct(i)%points_inside_j(j)
-            if ((i_sp >= isg) .and. (i_sp <= ieg) .and. (j_sp >= jsg) .and. (j_sp <= jeg)) then
+            ! contained in data domain
+            if ((i_sp >= isdg) .and. (i_sp <= iedg) .and. (j_sp >= jsdg) .and. (j_sp <= jedg)) then
                 ! owned point, relabel
-                sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - i_off
-                sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - j_off
+                sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - idgo
+                sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - jdgo
             end if
         enddo
     enddo
@@ -689,8 +708,8 @@ subroutine sal_conv_init(sal_ct, G)
     type(SAL_conv_type), intent(out) :: sal_ct
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
-    integer :: proc_count, is, ie, js, je, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank
+    integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
+    integer :: max_level, proc_rank, i_off, j_off
     integer, allocatable :: points_panels(:,:,:)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
     real :: lat, lon, colat, x, y, z, pi
@@ -706,49 +725,41 @@ subroutine sal_conv_init(sal_ct, G)
 
     pi = 4.D0*DATAN(1.D0)
 
-    is = G%isc
-    ie = G%iec
-    js = G%jsc
-    je = G%jec
-    isg = G%isg
-    ieg = G%ieg
-    jsg = G%jsg
-    jeg = G%jeg
+    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
     allocate(xg(imax, jmax), source=0.0)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
 
-    ic = ie-is+1
-    jc = je-js+1
+    ic = iec-isc+1; jc = jec-jsc+1
 
-    allocate(xc(is:ie, js:je), source=0.0)
-    allocate(yc(is:ie, js:je), source=0.0)
-    allocate(zc(is:ie, js:je), source=0.0)
+    allocate(xc(ic, jc), source=0.0)
+    allocate(yc(ic, jc), source=0.0)
+    allocate(zc(ic, jc), source=0.0)
 
-    ig_off = isg-is
-    jg_off = jsg-js
+    ig_off = isg-isc; jg_off = jsg-jsc
 
-    do j = js, je
-        do i = is, ie
+    do j = jsc, jec
+        do i = isc, iec
             if (G%mask2dT(i, j) == 1) then
-                lat = G%geoLatT(i, j)
-                lon = G%geoLonT(i, j)
+                lat = G%geoLatT(i, j) * pi/180.0
+                lon = G%geoLonT(i, j) * pi/180.0
                 colat = 0.5*pi-lat
                 x = sin(colat)*cos(lon)
                 y = sin(colat)*sin(lon)
                 z = cos(colat)
-                xc(i, j) = x
-                yc(i, j) = y
-                zc(i, j) = z
+                xc(i-isc+1, j-jsc+1) = x
+                yc(i-isc+1, j-jsc+1) = y
+                zc(i-isc+1, j-jsc+1) = z
                 xg(i+ig_off, j+jg_off) = x
                 yg(i+ig_off, j+jg_off) = y
                 zg(i+ig_off, j+jg_off) = z
             else ! land point
-                xc(i, j) = -2.0
-                yc(i, j) = -2.0
-                zc(i, j) = -2.0
+                xc(i-isc+1, j-jsc+1) = -2.0
+                yc(i-isc+1, j-jsc+1) = -2.0
+                zc(i-isc+1, j-jsc+1) = -2.0
                 xg(i+ig_off, j+jg_off) = -2.0
                 yg(i+ig_off, j+jg_off) = -2.0
                 zg(i+ig_off, j+jg_off) = -2.0
@@ -760,14 +771,15 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(sal_ct%tree_struct, xg, yg, zg, imax, jmax, 10) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, imax, jmax, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
     ! finds which panels contain the computational domain points
-    call assign_points_to_panels(sal_ct%tree_struct, xc, yc, zc, ic, jc, sal_ct%points_panels, max_level) 
+    call assign_points_to_panels(G, sal_ct%tree_struct, xc, yc, zc, sal_ct%points_panels, max_level) 
+
     ! compute the interaction lists for the target points in the computational domain
-    call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, ic, jc, 0.7)
+    call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
 
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
@@ -956,12 +968,13 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
 
     pi = 4.0*DATAN(1.0)
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    ic = iec-isc+1; jc = jec-jsc+1
     r2 = G%Rad_Earth ** 2
     
     if (sal_ct%reprod_sum) then
         allocate(points_in_panel(6), source=0)
-        do j = jsc, jec
-            do i = isc, iec
+        do j = 1, jc
+            do i = 1, ic
                 k = sal_ct%points_panels(1, i, j)
                 points_in_panel(k) = points_in_panel(k) + 1
             enddo
@@ -972,16 +985,16 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
         enddo
         allocate(proxy_source_weights_sep(1, l, size(proxy_source_weights)), source=0.0)
         allocate(pos_in_array(size(proxy_source_weights)), source=0)
-        do j = jsc, jec
-            do i = isc, iec
-                lat = G%geoLatT(i, j)
-                lon = G%geoLonT(i, j)
+        do j = 1, jc
+            do i = 1, ic
+                lat = G%geoLatT(i+isc-1, j+jsc-1)*pi/180.0
+                lon = G%geoLonT(i+isc-1, j+jsc-1)*pi/180.0
                 colat = 0.5*pi-lat
                 x = sin(colat)*cos(lon)
                 y = sin(colat)*sin(lon)
                 z = cos(colat)
-                a = G%areaT(i, j)/r2
-                ssh = sshs(i, j)
+                a = G%areaT(i+isc-1, j+jsc-1)/r2
+                ssh = sshs(i+isc-1, j+jsc-1)
                 panelloop1: do k = 1, size(sal_ct%points_panels(:,i,j))
                     i_t = sal_ct%points_panels(k,i,j)
                     if (i_t == -1) then
@@ -1009,16 +1022,16 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
         j = size(proxy_source_weights)
         sum_tot = reproducing_sum(proxy_source_weights_sep(:,:,1:j), sums=proxy_source_weights(1:j))
     else 
-        do j = jsc, jec
-            do i = isc, iec
-                lat = G%geoLatT(i, j)
-                lon = G%geoLonT(i, j)
+        do j = 1, jc
+            do i = 1, ic
+                lat = G%geoLatT(i+isc-1, j+jsc-1)*pi/180.0
+                lon = G%geoLonT(i+isc-1, j+jsc-1)*pi/180.0
                 colat = 0.5*pi-lat
                 x = sin(colat)*cos(lon)
                 y = sin(colat)*sin(lon)
                 z = cos(colat)
-                a = G%areaT(i, j)/r2
-                ssh = sshs(i, j)
+                a = G%areaT(i+isc-1, j+jsc-1)/r2
+                ssh = sshs(i+isc-1, j+jsc-1)
                 panelloop2: do k = 1, size(sal_ct%points_panels(:,i,j))
                     i_t = sal_ct%points_panels(k,i,j)
                     if (i_t == -1) then
@@ -1047,16 +1060,16 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     end if
 end subroutine proxy_source_compute
 
-subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y)
+subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(in) :: tx, ty, tz, sx, sy, sz
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2
 
-    cons = -2.343256857908601e-9
-    ! cons = -7.029770573725803e-9_8
+    cons = -7.029770573725803e-9/1.0 ! modify this
 
     sal_x = 0.0
     sal_y = 0.0
+    sal = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
         mp = 2.0-2.0*g
@@ -1068,18 +1081,19 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y)
         mp2 = sqrt(1.0-x32)
         sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
         sal_x = (tx*sy-ty*sx)/mp2*val
+        sal = cons*((1.0-6.21196)/(sqp+1e-16)+(2.7+6.0)*log(2*sqp+mp+1e-16))
     END IF
 end subroutine sal_grad_gfunc
 
-subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, sal_y)
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
     real, intent(in) :: proxy_source_weights(:)
-    real, intent(inout) :: sal_x(:,:), sal_y(:,:)
+    real, intent(inout) :: sal_x(:,:), sal_y(:,:), sal(:,:)
     integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset
     real, allocatable :: source_proxy_weights(:), cheb_xi(:), cheb_eta(:)
     real :: min_xi, max_xi, min_eta, max_eta, x, y, z, lat, lon, xi, eta, colat, pi
-    real :: cx, cy, cz, sal_grad_x, sal_grad_y
+    real :: cx, cy, cz, sal_grad_x, sal_grad_y, sal_val
 
     pi = 4.0*DATAN(1.0)
 
@@ -1096,7 +1110,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
         max_eta = sal_ct%tree_struct(i_s)%max_eta
         call bli_interp_points_shift(cheb_xi, min_xi, max_xi, sal_ct%interp_degree)
         call bli_interp_points_shift(cheb_eta, min_eta, max_eta, sal_ct%interp_degree)
-        lat = G%geoLatT(i_ti, i_tj); lon = G%geoLonT(i_ti, i_tj)
+        lat = G%geoLatT(i_ti, i_tj)*pi/180.0; lon = G%geoLonT(i_ti, i_tj)*pi/180.0
         colat = 0.5*pi-lat
         x = sin(colat)*cos(lon)
         y = sin(colat)*sin(lon)
@@ -1107,8 +1121,9 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
             do j = 1, sal_ct%interp_degree+1
                 xi = cheb_xi(j)
                 call xyz_from_xieta(cx, cy, cz, xi, eta, sal_ct%tree_struct(i_s)%face)
-                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y)
+                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_val, sal_grad_x, sal_grad_y)
                 offset = offset+1
+                sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
             enddo
@@ -1116,13 +1131,13 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
     enddo
 end subroutine pc_interaction_compute
 
-subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
+subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     type(SAL_conv_type), intent(in) :: sal_ct
     type(ocean_grid_type), intent(in) :: G
-    real, intent(inout) :: sal_x(:,:), sal_y(:,:)
+    real, intent(inout) :: sal_x(:,:), sal_y(:,:), sal(:,:)
     real, intent(in) :: e_ssh(:), eta(:,:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj
-    real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y
+    real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
@@ -1131,8 +1146,8 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
         i_s = sal_ct%pp_interactions(i)%index_source
         i_ti = sal_ct%pp_interactions(i)%index_target_i
         i_tj = sal_ct%pp_interactions(i)%index_target_j
-        lat = G%geoLatT(i_ti, i_tj)
-        lon = G%geoLonT(i_ti, i_tj)
+        lat = G%geoLatT(i_ti, i_tj)*pi/180.0
+        lon = G%geoLonT(i_ti, i_tj)*pi/180.0
         colat = 0.5*pi-lat
         x = sin(colat)*cos(lon)
         y = sin(colat)*sin(lon)
@@ -1154,18 +1169,19 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
                 sz = cos(colat)
                 ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
             end if
-            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
+            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_val, sal_grad_x, sal_grad_y)
+            sal(i_ti, i_tj) = sal(i_ti, i_tj)+sal_val*ssh
             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
         enddo
     enddo
 end subroutine pp_interaction_compute
 
-subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
+subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     type(SAL_conv_type), intent(in) :: sal_ct ! conv SAL data struct
     type(ocean_grid_type), intent(in) :: G ! ocean grid
     real, intent(in) :: eta(:,:) ! ssh
-    real, intent(inout) :: sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
+    real, intent(inout) :: sal(:,:), sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
     real, allocatable :: e_ssh(:), proxy_source_weights(:)
     integer :: source_size
 
@@ -1182,7 +1198,12 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
 
     ! compute PP interactions
-    call pp_interaction_compute(sal_ct, G, eta, sal_x, sal_y, e_ssh)
+    call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
 end subroutine sal_conv_eval
+
+subroutine sal_conv_end(sal_ct)
+    type(SAL_conv_type), intent(inout) :: sal_ct
+    deallocate(sal_ct)
+end subroutine sal_conv_end
 
 end module MOM_conv_self_attr_load

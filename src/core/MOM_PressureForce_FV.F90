@@ -21,6 +21,7 @@ use MOM_density_integrals, only : int_density_dz_generic_plm, int_density_dz_gen
 use MOM_density_integrals, only : int_spec_vol_dp_generic_plm
 use MOM_density_integrals, only : int_density_dz_generic_pcm, int_spec_vol_dp_generic_pcm
 use MOM_ALE, only : TS_PLM_edge_values, TS_PPM_edge_values, ALE_CS
+use MPM_conv_self_attr_load, only : SAL_conv_type, sal_conv_eval 
 
 implicit none ; private
 
@@ -130,8 +131,11 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     e_sal_tide, & ! The summation of self-attraction and loading and tidal forcing [Z ~> m].
     dM, &       ! The barotropic adjustment to the Montgomery potential to
                 ! account for a reduced gravity model [L2 T-2 ~> m2 s-2].
-    za          ! The geopotential anomaly (i.e. g*e + alpha_0*pressure) at the
+    za, &       ! The geopotential anomaly (i.e. g*e + alpha_0*pressure) at the
                 ! interface atop a layer [L2 T-2 ~> m2 s-2].
+    e_sal_x, &  ! e_sal x gradient component [V ~> m s-1]
+    e_sal_y     ! e_sal y gradient component [V ~> m s-1]
+
 
   real, dimension(SZI_(G)) :: Rho_cv_BL !  The coordinate potential density in the deepest variable
                 ! density near-surface layer [R ~> kg m-3].
@@ -313,6 +317,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   enddo
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
+  ! make modifications 
   if (CS%calculate_SAL) then
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
@@ -789,6 +794,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
     endif
 
     ! Compute pressure gradient in x direction
+    ! make changes
     !$OMP parallel do default(shared)
     do j=js,je ; do I=Isq,Ieq
       PFu(I,j,k) = (((pa(i,j)*h(i,j,k) + intz_dpa(i,j)) - &
@@ -800,6 +806,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
       intx_pa(I,j) = intx_pa(I,j) + intx_dpa(I,j)
     enddo ; enddo
     ! Compute pressure gradient in y direction
+    ! make changes
     !$OMP parallel do default(shared)
     do J=Jsq,Jeq ; do i=is,ie
       PFv(i,J,k) = (((pa(i,j)*h(i,j,k) + intz_dpa(i,j)) - &

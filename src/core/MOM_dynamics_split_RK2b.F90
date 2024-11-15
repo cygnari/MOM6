@@ -1384,10 +1384,10 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
-  if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp)
+  if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp) ! make changes 
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
-                          CS%SAL_CSp, CS%tides_CSp)
+                          CS%SAL_CSp, CS%tides_CSp) ! make changes
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, &
                      ntrunc, CS%vertvisc_CSp)
