@@ -1201,9 +1201,9 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
 end subroutine sal_conv_eval
 
-subroutine sal_conv_end(sal_ct)
-    type(SAL_conv_type), intent(inout) :: sal_ct
-    deallocate(sal_ct)
-end subroutine sal_conv_end
+! subroutine sal_conv_end(sal_ct)
+!     type(SAL_conv_type), intent(inout) :: sal_ct
+!     deallocate(sal_ct)
+! end subroutine sal_conv_end
 
 end module MOM_conv_self_attr_load
