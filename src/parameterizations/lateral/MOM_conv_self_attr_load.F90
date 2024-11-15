@@ -182,7 +182,7 @@ end function contains_point
 
 subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     ! constructs cubed sphere tree of points
-    type(ocean_grid_type), intent(in) :: G ! ocean grid
+    type(ocean_grid_type), intent(inout) :: G ! ocean grid
     type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
     integer, intent(in) :: cluster_thresh
@@ -295,9 +295,9 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
                 ! loop through points contained in parent panel, assign to sub panels
                 index_i = tree_panels_temp(i)%points_inside_i(j)
                 index_j = tree_panels_temp(i)%points_inside_j(j)
-                xval = x(index_i, index_j)
-                yval = y(index_i, index_j)
-                zval = z(index_i, index_j)
+                xval = xg(index_i, index_j)
+                yval = yg(index_i, index_j)
+                zval = zg(index_i, index_j)
                 call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
                 if (xi < mid_xi) then
                     if (eta < mid_eta) then
@@ -367,7 +367,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
     real, intent(in) :: x(:,:), y(:,:), z(:,:) ! size of computational domain
     integer, intent(in) :: levs
     integer, intent(inout) :: points_panels(:,:,:)
-    integer :: level, i, j, k, isg, ieg, jsg, jeg, ic, jc
+    integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
     real :: xco, yco, zco
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
@@ -505,7 +505,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     idgo = G%idg_offset; jdgo = G%jdg_offset
     isdg = G%isd_global; jsdg = G%jsd_global
-    iedg = G%ied+idgo, jedg = G%jed+jdgo
+    iedg = G%ied+idgo; jedg = G%jed+jdgo
     i_off = isg-isc; j_off = jsg-jsc
 
     allocate(proc_start_i(p), source=0)
@@ -771,7 +771,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, imax, jmax, 10) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
@@ -960,7 +960,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
     type(ocean_grid_type), intent(in) :: G
-    integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m
+    integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m, ic, jc
     real :: x, y, z, a, ssh, lat, lon, colat, pi, r2, min_xi, max_xi, min_eta, max_eta, xi, eta
     real, allocatable:: basis_vals(:,:), proxy_source_weights_sep(:,:,:)
     integer, allocatable :: points_in_panel(:), pos_in_array(:)
@@ -1062,7 +1062,7 @@ end subroutine proxy_source_compute
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(in) :: tx, ty, tz, sx, sy, sz
-    real, intent(out) :: sal_x, sal_y
+    real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2
 
     cons = -7.029770573725803e-9/1.0 ! modify this
@@ -1181,7 +1181,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     type(SAL_conv_type), intent(in) :: sal_ct ! conv SAL data struct
     type(ocean_grid_type), intent(in) :: G ! ocean grid
     real, intent(in) :: eta(:,:) ! ssh
-    real, intent(inout) :: sal(:,:), sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
+    real, intent(inout) :: e_sal(:,:), sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
     real, allocatable :: e_ssh(:), proxy_source_weights(:)
     integer :: source_size
 
@@ -1195,7 +1195,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions
-    call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+    call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
 
     ! compute PP interactions
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
