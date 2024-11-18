@@ -196,15 +196,11 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     integer :: which_panel, imax, jmax, ic, jc
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
-    print *, "here 4 1"
-
     pi = 4.D0*DATAN(1.D0)
     call get_global_grid_size(G, imax, jmax)
     point_count = imax*jmax
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
-
-    print *, "here 4 2"
 
     ! initialize the six top level cube panels
     do i = 1, 6
@@ -222,8 +218,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         curr_loc(i) = 0
     enddo
 
-    print *, "here 4 3"
-
     do j=1, jmax
         do i=1, imax
             xval = xg(i, j)
@@ -239,8 +233,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             end if
         enddo
     enddo
-
-    print *, "here 4 4"
 
     do i = 1, 6
         allocate(temp_i(curr_loc(i)))
@@ -261,6 +253,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     do while (i <= panel_count)
         ! first check if the panel needs to be subdivided 
         count = tree_panels_temp(i)%panel_point_count
+        print *, i
         if ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) then
             ! subdivide panel
             tree_panels_temp(i)%is_leaf = .false.
@@ -740,8 +733,6 @@ subroutine sal_conv_init(sal_ct, G)
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
 
-    print *, "here, 1"
-
     pi = 4.D0*DATAN(1.D0)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
@@ -752,8 +743,6 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
 
-    print *, "here, 2"
-
     ic = iec-isc+1; jc = jec-jsc+1
 
     allocate(xc(ic, jc), source=0.0)
@@ -761,8 +750,6 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(zc(ic, jc), source=0.0)
 
     ig_off = isg-isc; jg_off = jsg-jsc
-
-    print *, "here, 3"
 
     do j = jsc, jec
         do i = isc, iec
