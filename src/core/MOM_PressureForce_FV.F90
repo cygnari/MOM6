@@ -21,7 +21,7 @@ use MOM_density_integrals, only : int_density_dz_generic_plm, int_density_dz_gen
 use MOM_density_integrals, only : int_spec_vol_dp_generic_plm
 use MOM_density_integrals, only : int_density_dz_generic_pcm, int_spec_vol_dp_generic_pcm
 use MOM_ALE, only : TS_PLM_edge_values, TS_PPM_edge_values, ALE_CS
-use MPM_conv_self_attr_load, only : SAL_conv_type, sal_conv_eval 
+use MOM_conv_self_attr_load, only : SAL_conv_type, sal_conv_eval 
 
 implicit none ; private
 
