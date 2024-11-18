@@ -228,6 +228,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             xval = xg(i, j)
             yval = yg(i, j)
             zval = zg(i, j)
+            print *, xval, yval, zval
             if ((xval > -2.0) .and. (yval > -2.0) .and. (zval > -2.0)) then
                 ! points with x/y/z=-2 are land points 
                 face = face_from_xyz(xval, yval, zval)
