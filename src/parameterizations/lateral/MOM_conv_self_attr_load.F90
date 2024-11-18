@@ -202,6 +202,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
 
+    print *, size(tree_panels_temp)
+
     ! initialize the six top level cube panels
     do i = 1, 6
         tree_panels_temp(i)%id = i
@@ -253,7 +255,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     do while (i <= panel_count)
         ! first check if the panel needs to be subdivided 
         count = tree_panels_temp(i)%panel_point_count
-        print *, i
+        print *, i, panel_count, count
         if ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) then
             ! subdivide panel
             tree_panels_temp(i)%is_leaf = .false.
