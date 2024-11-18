@@ -726,6 +726,8 @@ subroutine sal_conv_init(sal_ct, G)
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
 
+    print *, "here, 1"
+
     pi = 4.D0*DATAN(1.D0)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
@@ -736,6 +738,8 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
 
+    print *, "here, 2"
+
     ic = iec-isc+1; jc = jec-jsc+1
 
     allocate(xc(ic, jc), source=0.0)
@@ -743,6 +747,8 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(zc(ic, jc), source=0.0)
 
     ig_off = isg-isc; jg_off = jsg-jsc
+
+    print *, "here, 3"
 
     do j = jsc, jec
         do i = isc, iec
@@ -770,6 +776,8 @@ subroutine sal_conv_init(sal_ct, G)
         enddo
     enddo
 
+    print *, "here, 4"
+
     call sum_across_PEs(xg, imax*jmax)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
@@ -777,15 +785,23 @@ subroutine sal_conv_init(sal_ct, G)
     call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
+    print *, "here, 5"
+
     allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
     ! finds which panels contain the computational domain points
     call assign_points_to_panels(G, sal_ct%tree_struct, xc, yc, zc, sal_ct%points_panels, max_level) 
 
+    print *, "here, 6"
+
     ! compute the interaction lists for the target points in the computational domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
 
+    print *, "here, 7"
+
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
+
+    print *, "here, 8"
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 

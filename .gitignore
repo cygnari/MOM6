@@ -12,3 +12,5 @@ config.status
 configure
 /Makefile
 Makefile.mkmf
+
+.DS_Store
