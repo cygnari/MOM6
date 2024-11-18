@@ -194,7 +194,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
     integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
     integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
-    integer :: which_panel, imax, jmax, ic, jc
+    integer :: which_panel, imax, jmax, ic, jc, count1
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
@@ -222,15 +222,17 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     enddo
 
     print *, "here 4 1"
+    count1 = 0
 
     do j=1, jmax
         do i=1, imax
             xval = xg(i, j)
             yval = yg(i, j)
             zval = zg(i, j)
-            print *, xval, yval, zval
+            ! print *, xval, yval, zval
             if ((xval > -2.0) .and. (yval > -2.0) .and. (zval > -2.0)) then
                 ! points with x/y/z=-2 are land points 
+                count1 = count1+1
                 face = face_from_xyz(xval, yval, zval)
                 curr_loc(face) = curr_loc(face) + 1
                 tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
@@ -239,6 +241,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             end if
         enddo
     enddo
+    print*, count
     print *, "here 4 2"
 
     do i = 1, 6
@@ -726,7 +729,7 @@ subroutine sal_conv_init(sal_ct, G)
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
     integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank, i_off, j_off
+    integer :: max_level, proc_rank, i_off, j_off, count1, count2
     integer, allocatable :: points_panels(:,:,:)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
     real :: lat, lon, colat, x, y, z, pi
@@ -757,10 +760,13 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(zc(ic, jc), source=0.0)
 
     ig_off = isg-isc; jg_off = jsg-jsc
+    count1 = 0
+    count2 = 0
 
     do j = jsc, jec
         do i = isc, iec
             if (G%mask2dT(i, j) > 0.1) then
+                count1 = count1+1
                 lat = G%geoLatT(i, j) * pi/180.0
                 lon = G%geoLonT(i, j) * pi/180.0
                 colat = 0.5*pi-lat
@@ -774,6 +780,7 @@ subroutine sal_conv_init(sal_ct, G)
                 yg(i+ig_off, j+jg_off) = y
                 zg(i+ig_off, j+jg_off) = z
             else ! land point
+                count2 = count2+1
                 xc(i-isc+1, j-jsc+1) = -2.0
                 yc(i-isc+1, j-jsc+1) = -2.0
                 zc(i-isc+1, j-jsc+1) = -2.0
@@ -783,6 +790,8 @@ subroutine sal_conv_init(sal_ct, G)
             end if
         enddo
     enddo
+
+    print *, count1, count2
 
     print *, "here, 4"
 
