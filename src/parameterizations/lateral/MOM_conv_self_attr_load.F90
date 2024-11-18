@@ -755,7 +755,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     do j = jsc, jec
         do i = isc, iec
-            if (G%mask2dT(i, j) == 1) then
+            if (G%mask2dT(i, j) > 0.1) then
                 lat = G%geoLatT(i, j) * pi/180.0
                 lon = G%geoLonT(i, j) * pi/180.0
                 colat = 0.5*pi-lat
