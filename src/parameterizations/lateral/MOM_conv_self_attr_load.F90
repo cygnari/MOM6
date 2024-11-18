@@ -1068,9 +1068,10 @@ end subroutine proxy_source_compute
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(in) :: tx, ty, tz, sx, sy, sz
     real, intent(out) :: sal_x, sal_y, sal
-    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2
+    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1
 
     cons = -7.029770573725803e-9/1.0 ! modify this
+    cons1 = 0.0447867/1.0 ! modify this
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1081,12 +1082,12 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
         sqp = sqrt(mp)
         p1 = (1.0-6.21196)/(sqp*mp+1e-16)
         p2 = (2.7+6.0)*(2*g+sqp) / (2.0*(g*g-1.0)+1e-16)
-        val = (p1+p2)*cons/1.0 ! modify this
+        val = (p1+p2)*cons ! modify this
         x32 = tz*tz
         mp2 = sqrt(1.0-x32)
         sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
         sal_x = (tx*sy-ty*sx)/mp2*val
-        sal = cons*((1.0-6.21196)/(sqp+1e-16)+(2.7+6.0)*log(2*sqp+mp+1e-16))
+        sal = cons1*((1.0-6.21196)/(sqp+1e-16)+(2.7+6.0)*log(2*sqp+mp+1e-16))
     END IF
 end subroutine sal_grad_gfunc
 
