@@ -67,6 +67,8 @@ type, public :: SAL_conv_type ; private
     integer :: interp_degree 
 end type SAL_conv_type
 
+integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
+
 contains
 
 integer function face_from_xyz(x, y, z) 
