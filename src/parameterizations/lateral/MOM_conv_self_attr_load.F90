@@ -79,6 +79,7 @@ integer function face_from_xyz(x, y, z)
     ax = abs(x)
     ay = abs(y)
     az = abs(z)
+    face = 0
     if ((ax >= ay) .and. (ax >= az)) then
         if (x >= 0) then
         face = 1
@@ -91,7 +92,7 @@ integer function face_from_xyz(x, y, z)
         else
         face = 4
         end if
-    else
+    else if ((az >= ax) .and. (az >= ay)) then
         if (z >= 0) then
         face = 5
         else
@@ -220,6 +221,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         curr_loc(i) = 0
     enddo
 
+    print *, "here 4 1"
+
     do j=1, jmax
         do i=1, imax
             xval = xg(i, j)
@@ -235,6 +238,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             end if
         enddo
     enddo
+    print *, "here 4 2"
 
     do i = 1, 6
         allocate(temp_i(curr_loc(i)))
