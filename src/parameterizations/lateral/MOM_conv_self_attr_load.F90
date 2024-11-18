@@ -196,11 +196,15 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     integer :: which_panel, imax, jmax, ic, jc
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
+    print *, "here 4 1"
+
     pi = 4.D0*DATAN(1.D0)
     call get_global_grid_size(G, imax, jmax)
     point_count = imax*jmax
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
+
+    print *, "here 4 2"
 
     ! initialize the six top level cube panels
     do i = 1, 6
@@ -218,6 +222,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         curr_loc(i) = 0
     enddo
 
+    print *, "here 4 3"
+
     do j=1, jmax
         do i=1, imax
             xval = xg(i, j)
@@ -234,6 +240,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         enddo
     enddo
 
+    print *, "here 4 4"
+
     do i = 1, 6
         allocate(temp_i(curr_loc(i)))
         allocate(temp_j(curr_loc(i)))
@@ -245,6 +253,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         call move_alloc(from=temp_j, to=tree_panels_temp(i)%points_inside_j)
         curr_loc(i) = 0
     enddo
+
+    print *, "here 4 5"
 
     i = 1
     panel_count = 6
@@ -339,6 +349,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         i = i + 1
     enddo
 
+    print *, "here 4 6"
+
     allocate(tree_panels(panel_count))
     do i = 1, panel_count
         tree_panels(i) = tree_panels_temp(i)
@@ -362,6 +374,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
     enddo
+
+    print *, "here 4 7"
 end subroutine tree_traversal
 
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
