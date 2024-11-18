@@ -43,6 +43,7 @@ use MOM_barotropic,            only : barotropic_end
 use MOM_boundary_update,       only : update_OBC_data, update_OBC_CS
 use MOM_continuity,            only : continuity, continuity_CS
 use MOM_continuity,            only : continuity_init, continuity_stencil
+use MOM_conv_self_attr_load,   only : SAL_conv_type, sal_conv_init
 use MOM_CoriolisAdv,           only : CorAdCalc, CoriolisAdv_CS
 use MOM_CoriolisAdv,           only : CoriolisAdv_init, CoriolisAdv_end
 use MOM_debugging,             only : check_redundant
@@ -239,6 +240,8 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   type(barotropic_CS) :: barotropic_CSp
   !> A pointer to the SAL control structure
   type(SAL_CS) :: SAL_CSp
+  !> A poiner to the conv SAL control structure
+  type(SAL_conv_type) :: SAL_convCSp
   !> A pointer to the tidal forcing control structure
   type(tidal_forcing_CS) :: tides_CSp
   !> A pointer to the ALE control structure.
@@ -1472,10 +1475,11 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
-  if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp)
+  ! if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp) ! sph harm SAL
+  if (CS%calculate_SAL) call sal_conv_init(CS%SAL_convCSp, G) ! convolution SAL
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
-                          CS%SAL_CSp, CS%tides_CSp)
+                          CS%SAL_CSp, CS%tides_CSp, CS%SAL_convCSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, ntrunc, CS%vertvisc_CSp)
   CS%set_visc_CSp => set_visc
@@ -1804,7 +1808,7 @@ subroutine end_dyn_split_RK2(CS)
   deallocate(CS%vertvisc_CSp)
 
   call hor_visc_end(CS%hor_visc)
-  if (CS%calculate_SAL) call SAL_end(CS%SAL_CSp)
+  ! if (CS%calculate_SAL) call SAL_end(CS%SAL_CSp)
   if (CS%use_tides) call tidal_forcing_end(CS%tides_CSp)
   call CoriolisAdv_end(CS%CoriolisAdv)
 

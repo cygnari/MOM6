@@ -4589,8 +4589,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
                  "If true, calculate self-attraction and loading.", default=use_tides)
   det_de = 0.0
-  if (CS%calculate_SAL .and. associated(CS%SAL_CSp)) &
-    call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
+  ! if (CS%calculate_SAL .and. associated(CS%SAL_CSp)) &
+  !   call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
   call get_param(param_file, mdl, "BAROTROPIC_TIDAL_SAL_BUG", CS%tidal_sal_bug, &
                  "If true, the tidal self-attraction and loading anomaly in the barotropic "//&
                  "solver has the wrong sign, replicating a long-standing bug with a scalar "//&

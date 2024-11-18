@@ -14,6 +14,7 @@ use MOM_PressureForce_Mont, only : PressureForce_Mont_Bouss, PressureForce_Mont_
 use MOM_PressureForce_Mont, only : PressureForce_Mont_init
 use MOM_PressureForce_Mont, only : PressureForce_Mont_CS
 use MOM_self_attr_load, only : SAL_CS
+use MOM_conv_self_attr_load, only : SAL_conv_type
 use MOM_tidal_forcing, only : tidal_forcing_CS
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs
@@ -61,13 +62,13 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
                                                !! [H ~> m or kg m-2], with any tidal contributions.
 
   if (CS%Analytic_FV_PGF) then
-    if (GV%Boussinesq) then
-      call PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_FV, &
-                                   ALE_CSp, p_atm, pbce, eta)
-    else
-      call PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_FV, &
-                                      ALE_CSp, p_atm, pbce, eta)
-    endif
+    ! if (GV%Boussinesq) then
+    !   call PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_FV, &
+    !                                ALE_CSp, p_atm, pbce, eta)
+    ! else
+    call PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_FV, &
+                                    ALE_CSp, p_atm, pbce, eta)
+    ! endif
   else
     if (GV%Boussinesq) then
       call PressureForce_Mont_Bouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_Mont, &
@@ -81,7 +82,7 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
 end subroutine Pressureforce
 
 !> Initialize the pressure force control structure
-subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp)
+subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp, SAL_ConvCSp)
   type(time_type), target, intent(in)    :: Time !< Current model time
   type(ocean_grid_type),   intent(in)    :: G    !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV   !< Vertical grid structure
@@ -91,6 +92,7 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, ti
   type(PressureForce_CS),  intent(inout) :: CS   !< Pressure force control structure
   type(SAL_CS),           intent(in), optional :: SAL_CSp !< SAL control structure
   type(tidal_forcing_CS), intent(in), optional :: tides_CSp !< Tide control structure
+  type(SAL_conv_type),    intent(in), optional :: SAL_ConvCSp !< conv SAL control structure
 #include "version_variable.h"
   character(len=40)  :: mdl = "MOM_PressureForce" ! This module's name.
 
@@ -105,7 +107,7 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, ti
 
   if (CS%Analytic_FV_PGF) then
     call PressureForce_FV_init(Time, G, GV, US, param_file, diag, &
-             CS%PressureForce_FV, SAL_CSp, tides_CSp)
+             CS%PressureForce_FV, SAL_CSp, tides_CSp, SAL_ConvCSp)
   else
     call PressureForce_Mont_init(Time, G, GV, US, param_file, diag, &
              CS%PressureForce_Mont, SAL_CSp, tides_CSp)

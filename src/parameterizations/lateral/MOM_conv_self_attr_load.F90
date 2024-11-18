@@ -5,6 +5,7 @@ use MOM_grid,            only : ocean_grid_type, get_global_grid_size
 use MOM_file_parser,     only : get_param
 use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast, sync_PEs
 use MOM_coms,            only : reproducing_sum
+use MOM_cpu_clock,       only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_MODULE
 
 implicit none ; private
 
@@ -784,6 +785,8 @@ subroutine sal_conv_init(sal_ct, G)
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
 
+    id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
+
     sal_ct%interp_degree=1
 end subroutine sal_conv_init
 
@@ -1076,7 +1079,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
         sqp = sqrt(mp)
         p1 = (1.0-6.21196)/(sqp*mp+1e-16)
         p2 = (2.7+6.0)*(2*g+sqp) / (2.0*(g*g-1.0)+1e-16)
-        val = (p1+p2)*cons
+        val = (p1+p2)*cons/1.0 ! modify this
         x32 = tz*tz
         mp2 = sqrt(1.0-x32)
         sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
@@ -1185,6 +1188,8 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     real, allocatable :: e_ssh(:), proxy_source_weights(:)
     integer :: source_size
 
+    call cpu_clock_begin(id_clock_SAL)
+
     ! do SSH communication needed for PP interactions
     allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
     call ssh_pp_communications(sal_ct, G, eta, e_ssh)
@@ -1199,6 +1204,8 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
 
     ! compute PP interactions
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+
+    call cpu_clock_end(id_clock_SAL)
 end subroutine sal_conv_eval
 
 ! subroutine sal_conv_end(sal_ct)
