@@ -230,7 +230,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             yval = yg(i, j)
             zval = zg(i, j)
             ! print *, xval, yval, zval
-            if ((xval > -2.0) .and. (yval > -2.0) .and. (zval > -2.0)) then
+            if ((xval > -1.9) .and. (yval > -1.9) .and. (zval > -1.9)) then
                 ! points with x/y/z=-2 are land points 
                 count1 = count1+1
                 face = face_from_xyz(xval, yval, zval)
@@ -241,8 +241,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             end if
         enddo
     enddo
-    print*, count
-    print *, "here 4 2"
+    ! print*, count
+    print *, "here 4 2, ocean count: ", count
 
     do i = 1, 6
         allocate(temp_i(curr_loc(i)))
@@ -791,9 +791,7 @@ subroutine sal_conv_init(sal_ct, G)
         enddo
     enddo
 
-    print *, count1, count2
-
-    print *, "here, 4"
+    print *, 'here, 4, c1: ', count1, " c2: ", count2
 
     call sum_across_PEs(xg, imax*jmax)
     call sum_across_PEs(yg, imax*jmax)
