@@ -729,7 +729,7 @@ subroutine sal_conv_init(sal_ct, G)
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
     integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank, i_off, j_off, count1, count2
+    integer :: max_level, proc_rank, i_off, j_off, count1, count2, isd, ied, jsd, jed
     integer, allocatable :: points_panels(:,:,:)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
     real :: lat, lon, colat, x, y, z, pi
@@ -746,7 +746,10 @@ subroutine sal_conv_init(sal_ct, G)
     pi = 4.D0*DATAN(1.D0)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
+    ig_off = G%idg_offset+isg-isd
+    jg_off = G%jdg_offset+jsg-jsd
     call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
 
@@ -763,11 +766,11 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(yc(ic, jc), source=0.0)
     allocate(zc(ic, jc), source=0.0)
 
-    ig_off = isg-isc; jg_off = jsg-jsc
+    ! ig_off = isg-isc; jg_off = jsg-jsc
     count1 = 0
     count2 = 0
 
-    print *, 'here, 3', isc, isg, iec, ieg, ig_off, jsc, jsg, jec, jeg, jg_off
+    print *, 'here, 3', isc, iec, ig_off, jsc, jec, jg_off
 
     do j = jsc, jec
         do i = isc, iec
