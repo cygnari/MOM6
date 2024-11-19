@@ -870,7 +870,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     do i=0, p-1 ! send points
         if (i.ne.id) then
-            if (points_needed_from_proc(i+1)>0) then
+            if (sal_ct%points_to_give_proc(i+1)>0) then
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_to_give(:,i+1), sal_ct%points_to_give_proc(i+1), id, pelist, .false.)
@@ -882,7 +882,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     do i=0, p-1 ! receive points
         if (i.ne.id) then
-            if (points_to_give_proc(i+1)>0) then
+            if (sal_ct%points_to_get_proc(i+1)>0) then
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_received(:,i+1), sal_ct%points_to_get_proc(i+1), i, pelist, .false.)
