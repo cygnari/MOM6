@@ -194,7 +194,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
     integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
     integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
-    integer :: which_panel, imax, jmax, ic, jc, count1
+    integer :: which_panel, imax, jmax, ic, jc
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
@@ -202,8 +202,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
     point_count = imax*jmax
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
-
-    print *, size(tree_panels_temp)
 
     ! initialize the six top level cube panels
     do i = 1, 6
@@ -221,9 +219,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         curr_loc(i) = 0
     enddo
 
-    print *, "here 4 1"
-    count1 = 0
-
     do j=1, jmax
         do i=1, imax
             xval = xg(i, j)
@@ -232,7 +227,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             ! print *, xval, yval, zval
             if ((xval > -1.9) .and. (yval > -1.9) .and. (zval > -1.9)) then
                 ! points with x/y/z=-2 are land points 
-                count1 = count1+1
                 face = face_from_xyz(xval, yval, zval)
                 curr_loc(face) = curr_loc(face) + 1
                 tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
@@ -241,8 +235,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             end if
         enddo
     enddo
-    ! print*, count
-    print *, "here 4 2, ocean count: ", count
 
     do i = 1, 6
         allocate(temp_i(curr_loc(i)))
@@ -256,14 +248,11 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         curr_loc(i) = 0
     enddo
 
-    print *, "here 4 5"
-
     i = 1
     panel_count = 6
     do while (i <= panel_count)
         ! first check if the panel needs to be subdivided 
         count = tree_panels_temp(i)%panel_point_count
-        print *, i, panel_count, count
         if ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) then
             ! subdivide panel
             tree_panels_temp(i)%is_leaf = .false.
@@ -352,8 +341,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         i = i + 1
     enddo
 
-    print *, "here 4 6"
-
     allocate(tree_panels(panel_count))
     do i = 1, panel_count
         tree_panels(i) = tree_panels_temp(i)
@@ -378,7 +365,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
     enddo
 
-    print *, "here 4 7"
 end subroutine tree_traversal
 
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
@@ -509,7 +495,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     type(ocean_grid_type), intent(in) :: G
     integer :: p, id, unowned_source_count, pp_count, i, i_s, j, i_sp, j_sp, k, max_p, pl, count
     integer :: isg, ieg, jsg, jeg, isc, iec, jsc, jec, i_off, j_off, i_sp2, j_sp2, isdg, iedg, jsdg, jedg
-    integer :: idgo, jdgo
+    integer :: idgo, jdgo, isd, jsd
     integer, allocatable :: proc_start_i(:), proc_start_j(:), proc_end_i(:), proc_end_j(:)
     integer, allocatable :: unowned_temp_i(:), unowned_temp_j(:), unowned_sources_i(:), unowned_sources_j(:)
     integer, allocatable :: points_needed_from_proc(:), points_from_proc_i(:,:), proc_loc(:), temp_locs(:)
@@ -521,22 +507,28 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     p = sal_ct%p
     id = sal_ct%id
 
+    print *, 'here 7 1'
+
     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    isd = G%isd; jsd = G%jsd
     idgo = G%idg_offset; jdgo = G%jdg_offset
     isdg = G%isd_global; jsdg = G%jsd_global
     iedg = G%ied+idgo; jedg = G%jed+jdgo
-    i_off = isg-isc; j_off = jsg-jsc
+    i_off = G%idg_offset+isg-isd
+    j_off = G%jdg_offset+jsg-jsd
 
     allocate(proc_start_i(p), source=0)
     allocate(proc_start_j(p), source=0)
     allocate(proc_end_i(p), source=0)
     allocate(proc_end_j(p), source=0)
 
-    proc_start_i(id) = isg
-    proc_start_j(id) = jsg
-    proc_end_i(id) = ieg
-    proc_end_j(id) = jeg
+    proc_start_i(id) = isc+i_off
+    proc_start_j(id) = jsc+j_off
+    proc_end_i(id) = iec+i_off
+    proc_end_j(id) = jec+j_off
+
+    print *, 'here 7 2'
 
     ! start and end indices for all the ranks
     call sum_across_PEs(proc_start_i, p)
@@ -551,6 +543,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(proc_loc(size(xg)), source=-1)
     pp_count = size(sal_ct%pp_interactions)
     unowned_source_count = 0
+    print *, 'here 7 3'
     do i = 1, pp_count
         i_s = sal_ct%pp_interactions(i)%index_source
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
@@ -583,6 +576,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
+    print *, 'here 7 4'
 
     allocate(unowned_sources_i(unowned_source_count))
     allocate(unowned_sources_j(unowned_source_count))
@@ -600,6 +594,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(points_from_proc_i(max_p, p), source=-1)
     allocate(points_from_proc_j(max_p, p), source=-1)
     allocate(temp_locs(p), source=0)
+    print *, 'here 7 5'
 
     ! points needed from each proc in global indices
     do i = 1, unowned_source_count
@@ -624,6 +619,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
+    print *, 'here 7 6'
 
     sal_ct%e_xs = e_xs
     sal_ct%e_ys = e_ys
@@ -636,6 +632,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i = 1, p
         points_needed_from_procs(id, i) = points_needed_from_proc(i)
     enddo
+    print *, 'here 7 7'
 
     call sum_across_PEs(points_needed_from_procs, p*p)
 
@@ -648,6 +645,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i = 1, p
         max_p = max(max_p, points_to_give_proc(i))
     enddo
+    print *, 'here 7 8'
 
     allocate(points_to_give_proc_i(max_p, p), source=-1)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
@@ -667,6 +665,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     enddo
 
     call sync_PEs()
+    print *, 'here 7 9'
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
@@ -688,6 +687,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
+    print *, 'here 7 10'
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
@@ -719,6 +719,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
+    print *, 'here 7 11'
 end subroutine calculate_communications
 
 subroutine sal_conv_init(sal_ct, G)
@@ -729,7 +730,7 @@ subroutine sal_conv_init(sal_ct, G)
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
     integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank, i_off, j_off, count1, count2, isd, ied, jsd, jed
+    integer :: max_level, proc_rank, i_off, j_off, isd, ied, jsd, jed
     integer, allocatable :: points_panels(:,:,:)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
     real :: lat, lon, colat, x, y, z, pi
@@ -760,22 +761,13 @@ subroutine sal_conv_init(sal_ct, G)
 
     ic = iec-isc+1; jc = jec-jsc+1
 
-    print *, 'here 2', imax, jmax, ic, jc
-
     allocate(xc(ic, jc), source=0.0)
     allocate(yc(ic, jc), source=0.0)
     allocate(zc(ic, jc), source=0.0)
 
-    ! ig_off = isg-isc; jg_off = jsg-jsc
-    count1 = 0
-    count2 = 0
-
-    print *, 'here, 3', isc, iec, ig_off, jsc, jec, jg_off
-
     do j = jsc, jec
         do i = isc, iec
             if (G%mask2dT(i, j) > 0.1) then
-                count1 = count1+1
                 lat = G%geoLatT(i, j) * pi/180.0
                 lon = G%geoLonT(i, j) * pi/180.0
                 colat = 0.5*pi-lat
@@ -789,7 +781,6 @@ subroutine sal_conv_init(sal_ct, G)
                 yg(i+ig_off, j+jg_off) = y
                 zg(i+ig_off, j+jg_off) = z
             else ! land point
-                count2 = count2+1
                 xc(i-isc+1, j-jsc+1) = -2.0
                 yc(i-isc+1, j-jsc+1) = -2.0
                 zc(i-isc+1, j-jsc+1) = -2.0
@@ -800,24 +791,16 @@ subroutine sal_conv_init(sal_ct, G)
         enddo
     enddo
 
-    print *, 'here, 4, c1: ', count1, " c2: ", count2
-    print *, 'here, 4, xyz: ', xg(1,1), yg(1,1), zg(1,1)
-
     call sum_across_PEs(xg, imax*jmax)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
-    print *, 'here, 4 0, xyz: ', xg(1,1), yg(1,1), zg(1,1)
     ! xg/yg/zg is now a copy of all the points from all the processors
     call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
-    print *, "here, 5"
-
     allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
     ! finds which panels contain the computational domain points
     call assign_points_to_panels(G, sal_ct%tree_struct, xc, yc, zc, sal_ct%points_panels, max_level) 
-
-    print *, "here, 6"
 
     ! compute the interaction lists for the target points in the computational domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
