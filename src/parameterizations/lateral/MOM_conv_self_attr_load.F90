@@ -634,8 +634,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     !     points_to_give_proc(i) = points_needed_from_procs(i, id)
     ! enddo
 
-    print *, 'here 7 7 1'
-
     allocate(pelist(2))
     allocate(points_to_give_proc(p), source=0)
     do i=0, p-1 ! send needed point counts
@@ -645,8 +643,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             call broadcast(points_needed_from_proc(i+1), id, pelist)
         endif
     enddo
-
-    print *, 'here 7 7 2'
 
     do i=0, p-1 ! receive point counts to give
         if (i .ne. id) then
@@ -658,8 +654,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     call sync_PEs()
 
-    print *, 'here 7 7 3'
-
     max_p = 0
     do i = 1, p
         max_p = max(max_p, points_to_give_proc(i))
@@ -670,8 +664,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
     ! allocate(pelist(2))
     pelist(1) = id
-
-    ! print *, 'here 7 8 1'
 
     do i=0, p-1 ! send point indices
         ! pelist(2) = i
@@ -687,8 +679,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    ! print *, 'here 7 8 2'
-
     do i=0, p-1 ! receive point indices
         ! pelist(2) = i
         if (i.ne.id) then
@@ -702,10 +692,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    ! print *, 'here 7 8 3'
-
     call sync_PEs()
-    ! print *, 'here 7 9'
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
@@ -727,7 +714,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
-    ! print *, 'here 7 10'
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
@@ -845,12 +831,8 @@ subroutine sal_conv_init(sal_ct, G)
     ! compute the interaction lists for the target points in the computational domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
 
-    print *, "here, 7"
-
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
-
-    print *, "here, 8"
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 

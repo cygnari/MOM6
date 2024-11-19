@@ -199,22 +199,29 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   alpha_ref = 1.0 / CS%Rho0
   I_gEarth = 1.0 / GV%g_Earth
 
+  print *, 'here 1'
+
   if (use_p_atm) then
     !$OMP parallel do default(shared)
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    do j = jsd,jed; do i=isd,ied
       p(i,j,1) = p_atm(i,j)
     enddo ; enddo
   else
     ! oneatm = 101325.0 * US%Pa_to_RL2_T2 ! 1 atm scaled to [R L2 T-2 ~> Pa]
     !$OMP parallel do default(shared)
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    do j = jsd,jed; do i=isd,ied
       p(i,j,1) = 0.0 ! or oneatm
     enddo ; enddo
   endif
+  print *, 'here 2'
   !$OMP parallel do default(shared)
-  do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
+  ! do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
+  do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
     p(i,j,K) = p(i,j,K-1) + H_to_RL2_T2 * h(i,j,k-1)
   enddo ; enddo ; enddo
+  print *, 'here 3'
 
   if (use_EOS) then
   !   With a bulk mixed layer, replace the T & S of any layers that are
@@ -248,6 +255,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       tv_tmp%eqn_of_state => tv%eqn_of_state
     endif
   endif
+  print *, 'here 4'
 
   ! If regridding is activated, do a linear reconstruction of salinity
   ! and temperature across each layer. The subscripts 't' and 'b' refer
@@ -260,6 +268,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       call TS_PPM_edge_values(ALE_CSp, S_t, S_b, T_t, T_b, G, GV, tv, h, CS%boundary_extrap)
     endif
   endif
+  print *, 'here 5'
 
   !$OMP parallel do default(shared) private(alpha_anom,dp)
   do k=1,nz
@@ -305,6 +314,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       enddo ; enddo
     endif
   enddo
+  print *, 'here 6'
 
   !   The bottom geopotential anomaly is calculated first so that the increments
   ! to the geopotential anomalies can be reused.  Alternately, the surface
@@ -325,9 +335,11 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       za(i,j) = za(i,j) + dza(i,j,k)
     enddo ; enddo
   enddo
+  print *, 'here 7'
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
   if (CS%calculate_SAL) then
+    print *, 'here 1'
     !$OMP parallel do default(shared)
     ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
     do j=jsd,jed; do i = isd,ied
