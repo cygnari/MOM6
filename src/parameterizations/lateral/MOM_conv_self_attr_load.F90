@@ -654,7 +654,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     print *, 'here 7 8 1'
 
-    do i=1, p ! send point indices
+    do i=0, p-1 ! send point indices
         ! pelist(2) = i
         if (i.ne.id) then
             pelist(1) = min(i, id)
@@ -666,7 +666,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     print *, 'here 7 8 2'
 
-    do i=1, p ! receive point indices
+    do i=0, p-1 ! receive point indices
         ! pelist(2) = i
         if (i.ne.id) then
             pelist(1) = min(i, id)
