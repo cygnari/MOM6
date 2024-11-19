@@ -623,6 +623,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(points_needed_from_procs(p, p), source=0)
     do i = 1, p
         points_needed_from_procs(id, i) = points_needed_from_proc(i)
+        ! print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
     enddo
     ! print *, 'here 7 7'
 
@@ -651,7 +652,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         if (i.ne.id) then
             if (points_needed_from_proc(i+1)>0) then
                 ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-                print *, 'id ', id, ' receive ', points_to_give_proc(i+1), ' from ', i
+                print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
