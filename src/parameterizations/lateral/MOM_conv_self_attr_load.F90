@@ -671,14 +671,14 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! allocate(pelist(2))
     pelist(1) = id
 
-    print *, 'here 7 8 1'
+    ! print *, 'here 7 8 1'
 
     do i=0, p-1 ! send point indices
         ! pelist(2) = i
         if (i.ne.id) then
             if (points_needed_from_proc(i+1)>0) then
                 ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-                print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+                ! print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
@@ -687,13 +687,13 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    print *, 'here 7 8 2'
+    ! print *, 'here 7 8 2'
 
     do i=0, p-1 ! receive point indices
         ! pelist(2) = i
         if (i.ne.id) then
             if (points_to_give_proc(i+1)>0) then
-                print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+                ! print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
@@ -702,10 +702,10 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    print *, 'here 7 8 3'
+    ! print *, 'here 7 8 3'
 
     call sync_PEs()
-    print *, 'here 7 9'
+    ! print *, 'here 7 9'
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
@@ -727,7 +727,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
-    print *, 'here 7 10'
+    ! print *, 'here 7 10'
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
@@ -759,7 +759,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
-    print *, 'here 7 11'
+    ! print *, 'here 7 11'
 end subroutine calculate_communications
 
 subroutine sal_conv_init(sal_ct, G)

@@ -335,7 +335,9 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                  - max(-G%bathyT(i,j)-G%Z_ref, 0.0)
     enddo ; enddo
     ! call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+    print *, 'conv eval start'
     call sal_conv_eval(CS%SAL_ConvCSp, G, SSH, e_sal, e_sal_x, e_sal_y)
+    print *, 'conv eval end'
 
     do j = Jsq,Jeq+1 ; do i=Isq,Ieq+1
       e_sal_x(i, j) = e_sal_x(i, j)*GV%g_Earth
