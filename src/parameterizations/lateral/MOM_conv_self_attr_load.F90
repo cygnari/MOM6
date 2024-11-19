@@ -749,11 +749,15 @@ subroutine sal_conv_init(sal_ct, G)
     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
+
+
     allocate(xg(imax, jmax), source=0.0)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
 
     ic = iec-isc+1; jc = jec-jsc+1
+
+    print *, 'here 2', imax, jmax, ic, jc
 
     allocate(xc(ic, jc), source=0.0)
     allocate(yc(ic, jc), source=0.0)
@@ -762,6 +766,8 @@ subroutine sal_conv_init(sal_ct, G)
     ig_off = isg-isc; jg_off = jsg-jsc
     count1 = 0
     count2 = 0
+
+    print *, 'here, 3', isc, isg, iec, ieg, ig_off, jsc, jsg, jec, jeg, jg_off
 
     do j = jsc, jec
         do i = isc, iec
