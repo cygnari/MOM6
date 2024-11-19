@@ -652,17 +652,27 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(pelist(2))
     pelist(1) = id
 
+    print *, 'here 7 8 1'
+
     do i=1, p ! send point indices
-        pelist(2) = i
+        ! pelist(2) = i
+        pelist(1) = min(i, id)
+        pelist(2) = max(i, id)
         call broadcast(points_from_proc_i(:,i), points_needed_from_proc(i), id, pelist)
         call broadcast(points_from_proc_j(:,i), points_needed_from_proc(i), id, pelist)
     enddo
 
+    print *, 'here 7 8 2'
+
     do i=1, p ! receive point indices
-        pelist(2) = i
+        ! pelist(2) = i
+        pelist(1) = min(i, id)
+        pelist(2) = max(i, id)
         call broadcast(points_to_give_proc_i(:,i), points_to_give_proc(i), i, pelist)
         call broadcast(points_to_give_proc_j(:,i), points_to_give_proc(i), i, pelist)
     enddo
+
+    print *, 'here 7 8 3'
 
     call sync_PEs()
     print *, 'here 7 9'
