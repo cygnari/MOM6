@@ -507,8 +507,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     p = sal_ct%p
     id = sal_ct%id
 
-    print *, 'here 7 1'
-
     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     isd = G%isd; jsd = G%jsd
@@ -528,8 +526,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     proc_end_i(id) = iec+i_off
     proc_end_j(id) = jec+j_off
 
-    print *, 'here 7 2'
-
     ! start and end indices for all the ranks
     call sum_across_PEs(proc_start_i, p)
     call sum_across_PEs(proc_start_j, p)
@@ -543,7 +539,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(proc_loc(size(xg)), source=-1)
     pp_count = size(sal_ct%pp_interactions)
     unowned_source_count = 0
-    print *, 'here 7 3'
     do i = 1, pp_count
         i_s = sal_ct%pp_interactions(i)%index_source
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
@@ -576,7 +571,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
-    print *, 'here 7 4'
 
     allocate(unowned_sources_i(unowned_source_count))
     allocate(unowned_sources_j(unowned_source_count))
@@ -594,7 +588,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(points_from_proc_i(max_p, p), source=-1)
     allocate(points_from_proc_j(max_p, p), source=-1)
     allocate(temp_locs(p), source=0)
-    print *, 'here 7 5'
 
     ! points needed from each proc in global indices
     do i = 1, unowned_source_count
@@ -619,7 +612,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
-    print *, 'here 7 6'
 
     sal_ct%e_xs = e_xs
     sal_ct%e_ys = e_ys
@@ -632,7 +624,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i = 1, p
         points_needed_from_procs(id, i) = points_needed_from_proc(i)
     enddo
-    print *, 'here 7 7'
+    ! print *, 'here 7 7'
 
     call sum_across_PEs(points_needed_from_procs, p*p)
 
@@ -645,7 +637,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i = 1, p
         max_p = max(max_p, points_to_give_proc(i))
     enddo
-    print *, 'here 7 8'
+    ! print *, 'here 7 8'
 
     allocate(points_to_give_proc_i(max_p, p), source=-1)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
@@ -658,7 +650,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         ! pelist(2) = i
         if (i.ne.id) then
             if (points_needed_from_proc(i+1)>0) then
-                print *, 'id i needed', id, i, points_needed_from_proc(i+1)
+                ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
+                print *, 'id ', id, ' receive ', points_to_give_proc(i+1), ' from ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
@@ -673,6 +666,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         ! pelist(2) = i
         if (i.ne.id) then
             if (points_to_give_proc(i+1)>0) then
+                print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
@@ -872,17 +866,41 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     enddo
 
     allocate(pelist(2))
-    pelist(1) = id
+    ! pelist(1) = id
 
-    do i = 1, p 
-        pelist(2) = i
-        call broadcast(points_to_give(:,i), sal_ct%points_to_give_proc(i), id, pelist, .false.)
+    do i=0, p-1 ! send points
+        if (i.ne.id) then
+            if (points_needed_from_proc(i+1)>0) then
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_to_give(:,i+1), sal_ct%points_to_give_proc(i+1), id, pelist, .false.)
+                ! call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
+                ! call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
+            endif
+        endif
     enddo
 
-    do i = 1, p
-        pelist(2) = i
-        call broadcast(points_received(:,i), sal_ct%points_to_get_proc(i), i, pelist, .false.)
+    do i=0, p-1 ! receive points
+        if (i.ne.id) then
+            if (points_to_give_proc(i+1)>0) then
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_received(:,i+1), sal_ct%points_to_get_proc(i+1), i, pelist, .false.)
+                ! call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
+                ! call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
+            endif
+        endif
     enddo
+
+    ! do i = 1, p 
+    !     pelist(2) = i
+    !     call broadcast(points_to_give(:,i), sal_ct%points_to_give_proc(i), id, pelist, .false.)
+    ! enddo
+
+    ! do i = 1, p
+    !     pelist(2) = i
+    !     call broadcast(points_received(:,i), sal_ct%points_to_get_proc(i), i, pelist, .false.)
+    ! enddo
 
     call sync_PEs()
 
