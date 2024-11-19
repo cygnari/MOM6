@@ -657,7 +657,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i=0, p-1 ! send point indices
         ! pelist(2) = i
         if (i.ne.id) then
-            ! print *, 'id i needed', id, i, 
+            print *, 'id i needed', id, i, points_needed_from_proc(i+1)
             pelist(1) = min(i, id)
             pelist(2) = max(i, id)
             call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
