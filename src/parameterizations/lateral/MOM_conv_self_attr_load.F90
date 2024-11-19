@@ -642,7 +642,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         if (i .ne. id) then
             pelist(1) = min(i, id)
             pelist(2) = max(i, id)
-            call broadcast(points_needed_from_proc(i+1), 1, id, pelist)
+            call broadcast(points_needed_from_proc(i+1), id, pelist)
         endif
     enddo
 
@@ -652,7 +652,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         if (i .ne. id) then
             pelist(1) = min(i, id)
             pelist(2) = max(i, id)
-            call broadcast(points_to_give_proc(i+1), 1, i, pelist)
+            call broadcast(points_to_give_proc(i+1), i, pelist)
         endif
     enddo
 
