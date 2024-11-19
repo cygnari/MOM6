@@ -657,11 +657,13 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i=0, p-1 ! send point indices
         ! pelist(2) = i
         if (i.ne.id) then
-            print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-            pelist(1) = min(i, id)
-            pelist(2) = max(i, id)
-            call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
-            call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
+            if (points_needed_from_proc(i+1)>0) then
+                print *, 'id i needed', id, i, points_needed_from_proc(i+1)
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
+                call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
+            endif
         endif
     enddo
 
@@ -670,10 +672,12 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i=0, p-1 ! receive point indices
         ! pelist(2) = i
         if (i.ne.id) then
-            pelist(1) = min(i, id)
-            pelist(2) = max(i, id)
-            call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
-            call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
+            if (points_to_give_proc(i+1)>0) then
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
+                call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
+            endif
         endif
     enddo
 
