@@ -620,19 +620,45 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     deallocate(unowned_temp_i)
     deallocate(unowned_temp_j)
 
-    allocate(points_needed_from_procs(p, p), source=0)
-    do i = 1, p
-        points_needed_from_procs(id, i) = points_needed_from_proc(i)
-        ! print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
-    enddo
-    ! print *, 'here 7 7'
+    ! allocate(points_needed_from_procs(p, p), source=0)
+    ! do i = 1, p
+    !     points_needed_from_procs(id, i) = points_needed_from_proc(i)
+    !     ! print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
+    ! enddo
+    ! ! print *, 'here 7 7'
 
-    call sum_across_PEs(points_needed_from_procs, p*p)
+    ! call sum_across_PEs(points_needed_from_procs, p*p)
 
-    allocate(points_to_give_proc(p), source=0) ! points to give each other processor
-    do i = 1, p
-        points_to_give_proc(i) = points_needed_from_procs(i, id)
+    ! allocate(points_to_give_proc(p), source=0) ! points to give each other processor
+    ! do i = 1, p
+    !     points_to_give_proc(i) = points_needed_from_procs(i, id)
+    ! enddo
+
+    print *, 'here 7 7 1'
+
+    allocate(pelist(2))
+    allocate(points_to_give_proc(p), source=0)
+    do i=0, p-1 ! send needed point counts
+        if (i .ne. id) then
+            pelist(1) = min(i, id)
+            pelist(2) = max(i, id)
+            call broadcast(points_needed_from_proc(i+1), 1, id, pelist)
+        endif
     enddo
+
+    print *, 'here 7 7 2'
+
+    do i=0, p-1 ! receive point counts to give
+        if (i .ne. id) then
+            pelist(1) = min(i, id)
+            pelist(2) = max(i, id)
+            call broadcast(points_to_give_proc(i+1), 1, i, pelist)
+        endif
+    enddo
+
+    call sync_PEs()
+
+    print *, 'here 7 7 3'
 
     max_p = 0
     do i = 1, p
@@ -642,7 +668,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_to_give_proc_i(max_p, p), source=-1)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
-    allocate(pelist(2))
+    ! allocate(pelist(2))
     pelist(1) = id
 
     print *, 'here 7 8 1'
