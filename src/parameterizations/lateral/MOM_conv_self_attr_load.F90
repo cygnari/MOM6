@@ -792,12 +792,12 @@ subroutine sal_conv_init(sal_ct, G)
     enddo
 
     print *, 'here, 4, c1: ', count1, " c2: ", count2
-    print *, 'here, 4, xyz: ', xg(1), yg(1), zg(1)
+    print *, 'here, 4, xyz: ', xg(1,1), yg(1,1), zg(1,1)
 
     call sum_across_PEs(xg, imax*jmax)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
-    print *, 'here, 4 0, xyz: ', xg(1), yg(1), zg(1)
+    print *, 'here, 4 0, xyz: ', xg(1,1), yg(1,1), zg(1,1)
     ! xg/yg/zg is now a copy of all the points from all the processors
     call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
