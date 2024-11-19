@@ -1483,15 +1483,20 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                           CS%SAL_CSp, CS%tides_CSp, CS%SAL_convCSp)
   print *, 'pressure init done'
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
+  print *, 'here 0 1'
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, ntrunc, CS%vertvisc_CSp)
+  print *, 'here 0 2'
   CS%set_visc_CSp => set_visc
+  print *, 'here 0 3'
   call updateCFLtruncationValue(Time, CS%vertvisc_CSp, US, activate=is_new_run(restart_CS) )
-
+  print *, 'here 0 4'
   if (associated(ALE_CSp)) CS%ALE_CSp => ALE_CSp
+  print *, 'here 0 5'
   if (associated(OBC)) then
     CS%OBC => OBC
     if (OBC%ramp) call update_OBC_ramp(Time, CS%OBC, US, activate=is_new_run(restart_CS) )
   endif
+  print *, 'here 0 6'
   if (associated(update_OBC_CSp)) CS%update_OBC_CSp => update_OBC_CSp
 
   print *, 'here 1'
