@@ -696,11 +696,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-     print *, id, 'here 4 3'
+    print *, id, 'here 4 3'
 
     call sync_PEs()
 
-     print *, id, 'here 4 4'
+    print *, id, 'here 4 4'
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
@@ -722,6 +722,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo
     enddo
+
+    print *, id, 'here 4 5'
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
@@ -753,6 +755,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
+    print *, id, 'here 4 6'
     ! print *, 'here 7 11'
 end subroutine calculate_communications
 
