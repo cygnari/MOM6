@@ -636,6 +636,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(pelist(2))
     allocate(points_to_give_proc(p), source=0)
+
+    do i = 1,p
+        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+        print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
+    enddo
     do i=0, p-1 ! send needed point counts
         if (i .ne. id) then
             pelist(1) = min(i, id)
