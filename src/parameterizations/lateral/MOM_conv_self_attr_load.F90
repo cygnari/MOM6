@@ -765,7 +765,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
-    ! print *, id, 'here 4 6'
+    print *, id, 'here 4 6'
     print *, 'test'
     ! print *, 'here 7 11'
 end subroutine calculate_communications
@@ -857,7 +857,8 @@ subroutine sal_conv_init(sal_ct, G)
 
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
-    print *, sal_ct%id, 'here 5'
+    ! print *, sal_ct%id, 'here 5'
+    print *, 'test'
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 
