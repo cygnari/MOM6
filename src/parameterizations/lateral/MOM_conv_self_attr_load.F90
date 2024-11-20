@@ -672,7 +672,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         if (i.ne.id) then
             if (points_needed_from_proc(i+1)>0) then
                 ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-                ! print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+                print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
@@ -687,7 +687,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         ! pelist(2) = i
         if (i.ne.id) then
             if (points_to_give_proc(i+1)>0) then
-                ! print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+                print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
                 pelist(1) = min(i, id)
                 pelist(2) = max(i, id)
                 call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
