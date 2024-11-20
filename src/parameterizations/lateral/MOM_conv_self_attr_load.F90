@@ -858,9 +858,9 @@ subroutine sal_conv_init(sal_ct, G)
     print *, sal_ct%id, 'here 4'
 
     ! compute communication patterns 
-    call calculate_communications(sal_ct, xg, yg, zg, G)
-    ! print *, sal_ct%id, 'here 5'
-    print *, 'test'
+    ! call calculate_communications(sal_ct, xg, yg, zg, G)
+    print *, sal_ct%id, 'here 5'
+    ! print *, 'test'
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 
