@@ -737,10 +737,12 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
+    print *, unowned_source_count
     do i = 1, unowned_source_count
         i_sp = unowned_sources_i(i)
         j_sp = unowned_sources_j(j)
         j = 1
+        print *, i_sp, j_sp
         ! loop over tree panels, relabel points i_sp, j_sp => i, -1
         treeloop: do
             if (j == -1) then
