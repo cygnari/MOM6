@@ -665,6 +665,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! allocate(pelist(2))
     pelist(1) = id
 
+    print *, id, 'here 4 1'
+
     do i=0, p-1 ! send point indices
         ! pelist(2) = i
         if (i.ne.id) then
@@ -679,6 +681,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
+    print *, id, 'here 4 2'
+
     do i=0, p-1 ! receive point indices
         ! pelist(2) = i
         if (i.ne.id) then
@@ -692,7 +696,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
+     print *, id, 'here 4 3'
+
     call sync_PEs()
+
+     print *, id, 'here 4 4'
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
