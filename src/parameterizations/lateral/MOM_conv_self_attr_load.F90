@@ -765,7 +765,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
-    print *, id, 'here 4 6'
+    ! print *, id, 'here 4 6'
+    print *, 'test'
     ! print *, 'here 7 11'
 end subroutine calculate_communications
 
