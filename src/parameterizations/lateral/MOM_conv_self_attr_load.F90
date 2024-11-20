@@ -779,8 +779,6 @@ subroutine sal_conv_init(sal_ct, G)
     jg_off = G%jdg_offset+jsg-jsd
     call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
-
-
     allocate(xg(imax, jmax), source=0.0)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
@@ -821,18 +819,23 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg, imax*jmax)
     call sum_across_PEs(zg, imax*jmax)
     ! xg/yg/zg is now a copy of all the points from all the processors
+    print *, sal_ct%id, 'here 1'
     call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
+    print *, sal_ct%id, 'here 2'
 
     allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
     ! finds which panels contain the computational domain points
     call assign_points_to_panels(G, sal_ct%tree_struct, xc, yc, zc, sal_ct%points_panels, max_level) 
+    print *, sal_ct%id, 'here 3'
 
     ! compute the interaction lists for the target points in the computational domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
+    print *, sal_ct%id, 'here 4'
 
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg, yg, zg, G)
+    print *, sal_ct%id, 'here 5'
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 
