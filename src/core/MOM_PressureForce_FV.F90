@@ -982,6 +982,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
   character(len=40)  :: mdl  ! This module's name.
   logical :: use_ALE       ! If true, use the Vertical Lagrangian Remap algorithm
 
+  print *, 'here 0 0 1'
+
   CS%initialized = .true.
   CS%diag => diag ; CS%Time => Time
   if (present(tides_CSp)) &
@@ -990,6 +992,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
     CS%SAL_CSp => SAL_CSp
   if (present(SAL_ConvCSp)) &
     CS%SAL_ConvCSp => SAL_ConvCSp
+
+  print *, 'here 0 0 2'
 
   mdl = "MOM_PressureForce_FV"
   call log_version(param_file, mdl, version, "")
@@ -1068,6 +1072,7 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
     CS%id_e_tide_sal = register_diag_field('ocean_model', 'e_tide_sal', diag%axesT1, Time, &
         'Read-in tidal self-attraction and loading height anomaly', 'meter', conversion=US%Z_to_m)
   endif
+  print *, 'here 0 0 3'
 
   CS%GFS_scale = 1.0
   if (GV%g_prime(1) /= GV%g_Earth) CS%GFS_scale = GV%g_prime(1) / GV%g_Earth
