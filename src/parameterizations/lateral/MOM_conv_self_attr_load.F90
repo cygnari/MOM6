@@ -672,7 +672,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_to_give_proc_i(max_p, p), source=-1)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
-    ! allocate(pelist(2))
     pelist(1) = id
 
     print *, id, 'here 4 1'
@@ -708,7 +707,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     print *, id, 'here 4 3'
 
-    call sync_PEs()
+    ! call sync_PEs()
 
     print *, id, 'here 4 4'
 
