@@ -738,35 +738,35 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
     print *, unowned_source_count
-    do i = 1, unowned_source_count
-        i_sp = unowned_sources_i(i)
-        j_sp = unowned_sources_j(j)
-        j = 1
-        print *, i_sp, j_sp
-        ! loop over tree panels, relabel points i_sp, j_sp => i, -1
-        treeloop: do
-            if (j == -1) then
-                exit treeloop
-            else 
-                found = .false.
-                kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
-                    i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
-                    j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
-                    if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
-                        found = .true.
-                        sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
-                        sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
-                        exit kloop3
-                    end if
-                enddo kloop3
-                if (found) then
-                    j = sal_ct%tree_struct(j)%child_panel_1
-                else
-                    j = j + 1
-                end if
-            end if
-        enddo treeloop
-    enddo
+    ! do i = 1, unowned_source_count
+    !     i_sp = unowned_sources_i(i)
+    !     j_sp = unowned_sources_j(j)
+    !     j = 1
+    !     print *, i_sp, j_sp
+    !     ! loop over tree panels, relabel points i_sp, j_sp => i, -1
+    !     treeloop: do
+    !         if (j == -1) then
+    !             exit treeloop
+    !         else 
+    !             found = .false.
+    !             kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
+    !                 i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
+    !                 j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
+    !                 if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
+    !                     found = .true.
+    !                     sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
+    !                     sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
+    !                     exit kloop3
+    !                 end if
+    !             enddo kloop3
+    !             if (found) then
+    !                 j = sal_ct%tree_struct(j)%child_panel_1
+    !             else
+    !                 j = j + 1
+    !             end if
+    !         end if
+    !     enddo treeloop
+    ! enddo
     print *, id, 'here 4 6'
     print *, 'test'
     ! print *, 'here 7 11'
