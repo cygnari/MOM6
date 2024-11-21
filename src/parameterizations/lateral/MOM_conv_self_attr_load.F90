@@ -501,6 +501,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     integer, allocatable :: points_needed_from_proc(:), points_from_proc_i(:,:), proc_loc(:), temp_locs(:)
     integer, allocatable :: points_from_proc_j(:,:), points_needed_from_procs(:,:), points_to_give_proc(:)
     integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:), pelist(:)
+    integer, allocatable :: point_counts_to_communicate(:)
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:)
     logical :: found
 
