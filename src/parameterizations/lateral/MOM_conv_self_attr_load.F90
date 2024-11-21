@@ -623,7 +623,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(points_needed_from_procs(p, p), source=0)
     do i = 1, p
         points_needed_from_procs(id, i) = points_needed_from_proc(i)
-        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
+        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
     enddo
     ! ! print *, 'here 7 7'
 
@@ -656,53 +656,53 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    ! call sync_PEs()
+    call sync_PEs()
 
-    ! do i = 1,p
-    !     print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-    !     print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
-    ! enddo
+    do i = 1,p
+        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+        print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
+    enddo
 
-    ! max_p = 0
-    ! do i = 1, p
-    !     max_p = max(max_p, points_to_give_proc(i))
-    ! enddo
-    ! print *, 'here 7 8'
+    max_p = 0
+    do i = 1, p
+        max_p = max(max_p, points_to_give_proc(i))
+    enddo
+    print *, 'here 7 8'
 
-    ! allocate(points_to_give_proc_i(max_p, p), source=-1)
-    ! allocate(points_to_give_proc_j(max_p, p), source=-1)
-    ! pelist(1) = id
+    allocate(points_to_give_proc_i(max_p, p), source=-1)
+    allocate(points_to_give_proc_j(max_p, p), source=-1)
+    pelist(1) = id
 
     print *, id, 'here 4 1'
 
-    ! do i=0, p-1 ! send point indices
-    !     ! pelist(2) = i
-    !     if (i.ne.id) then
-    !         if (points_needed_from_proc(i+1)>0) then
-    !             ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-    !             print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
-    !             pelist(1) = min(i, id)
-    !             pelist(2) = max(i, id)
-    !             call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
-    !             call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
-    !         endif
-    !     endif
-    ! enddo
+    do i=0, p-1 ! send point indices
+        ! pelist(2) = i
+        if (i.ne.id) then
+            if (points_needed_from_proc(i+1)>0) then
+                ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
+                print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
+                call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
+            endif
+        endif
+    enddo
 
     print *, id, 'here 4 2'
 
-    ! do i=0, p-1 ! receive point indices
-    !     ! pelist(2) = i
-    !     if (i.ne.id) then
-    !         if (points_to_give_proc(i+1)>0) then
-    !             print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
-    !             pelist(1) = min(i, id)
-    !             pelist(2) = max(i, id)
-    !             call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
-    !             call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
-    !         endif
-    !     endif
-    ! enddo
+    do i=0, p-1 ! receive point indices
+        ! pelist(2) = i
+        if (i.ne.id) then
+            if (points_to_give_proc(i+1)>0) then
+                print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+                pelist(1) = min(i, id)
+                pelist(2) = max(i, id)
+                call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
+                call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
+            endif
+        endif
+    enddo
 
     print *, id, 'here 4 3'
 
