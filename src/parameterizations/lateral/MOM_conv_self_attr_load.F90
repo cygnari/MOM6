@@ -635,27 +635,26 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     enddo
 
     allocate(pelist(2))
-    allocate(points_to_give_proc(p), source=0)
 
     do i = 1,p
         print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
         print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
-    ! do i=0, p-1 ! send needed point counts
-    !     if (i .ne. id) then
-    !         pelist(1) = min(i, id)
-    !         pelist(2) = max(i, id)
-    !         call broadcast(points_needed_from_proc(i+1), id, pelist)
-    !     endif
-    ! enddo
+    do i=0, p-1 ! send needed point counts
+        if (i .ne. id) then
+            pelist(1) = min(i, id)
+            pelist(2) = max(i, id)
+            call broadcast(points_needed_from_proc(i+1), id, pelist)
+        endif
+    enddo
 
-    ! do i=0, p-1 ! receive point counts to give
-    !     if (i .ne. id) then
-    !         pelist(1) = min(i, id)
-    !         pelist(2) = max(i, id)
-    !         call broadcast(points_to_give_proc(i+1), i, pelist)
-    !     endif
-    ! enddo
+    do i=0, p-1 ! receive point counts to give
+        if (i .ne. id) then
+            pelist(1) = min(i, id)
+            pelist(2) = max(i, id)
+            call broadcast(points_to_give_proc(i+1), i, pelist)
+        endif
+    enddo
 
     ! call sync_PEs()
 
