@@ -613,9 +613,9 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    sal_ct%e_xs = e_xs
-    sal_ct%e_ys = e_ys
-    sal_ct%e_zs = e_zs
+    ! sal_ct%e_xs = e_xs
+    ! sal_ct%e_ys = e_ys
+    ! sal_ct%e_zs = e_zs
 
     ! deallocate(unowned_temp_i)
     ! deallocate(unowned_temp_j)
