@@ -527,10 +527,10 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     proc_end_j(id+1) = jec+j_off
 
     ! start and end indices for all the ranks
-    ! call sum_across_PEs(proc_start_i, p)
-    ! call sum_across_PEs(proc_start_j, p)
-    ! call sum_across_PEs(proc_end_i, p)
-    ! call sum_across_PEs(proc_end_j, p)
+    call sum_across_PEs(proc_start_i, p)
+    call sum_across_PEs(proc_start_j, p)
+    call sum_across_PEs(proc_end_i, p)
+    call sum_across_PEs(proc_end_j, p)
 
     ! find unowned sources
     ! allocate(unowned_temp_i(size(xg)), source=-1)
