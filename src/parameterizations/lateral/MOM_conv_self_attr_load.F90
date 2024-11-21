@@ -715,7 +715,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     sal_ct%points_to_get_j = points_from_proc_j
     sal_ct%points_to_get_proc = points_needed_from_proc
 
-    relabel sources in tree for locally owned points
+    ! relabel sources in tree for locally owned points
     do i = 1, size(sal_ct%tree_struct)
         do j = 1, sal_ct%tree_struct(i)%panel_point_count
             i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
