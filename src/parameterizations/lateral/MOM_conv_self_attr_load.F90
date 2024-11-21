@@ -620,25 +620,23 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     deallocate(unowned_temp_i)
     deallocate(unowned_temp_j)
 
-    allocate(points_needed_from_procs(p, p), source=0)
-    do i = 1, p
-        points_needed_from_procs(id, i) = points_needed_from_proc(i)
-        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-    enddo
+    ! allocate(points_needed_from_procs(p, p), source=0)
+    ! do i = 1, p
+    !     points_needed_from_procs(id, i) = points_needed_from_proc(i)
+    !     print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+    ! enddo
     ! ! print *, 'here 7 7'
 
-    ! call sum_across_PEs(points_needed_from_procs, p*p)
-
-    allocate(points_to_give_proc(p), source=0) ! points to give each other processor
-    do i = 1, p
-        points_to_give_proc(i) = points_needed_from_procs(i, id)
-    enddo
+    ! allocate(points_to_give_proc(p), source=0) ! points to give each other processor
+    ! do i = 1, p
+    !     points_to_give_proc(i) = points_needed_from_procs(i, id)
+    ! enddo
 
     allocate(pelist(2))
 
     do i = 1,p
-        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-        print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
+        print *, 'before id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+        print *, 'before id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
     do i=0, p-1 ! send needed point counts
         if (i .ne. id) then
@@ -659,8 +657,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     call sync_PEs()
 
     do i = 1,p
-        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-        print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
+        print *, 'after id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+        print *, 'after id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
 
     max_p = 0
