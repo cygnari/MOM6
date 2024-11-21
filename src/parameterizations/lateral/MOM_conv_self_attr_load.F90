@@ -617,8 +617,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     sal_ct%e_ys = e_ys
     sal_ct%e_zs = e_zs
 
-    deallocate(unowned_temp_i)
-    deallocate(unowned_temp_j)
+    ! deallocate(unowned_temp_i)
+    ! deallocate(unowned_temp_j)
 
     ! allocate(points_needed_from_procs(p, p), source=0)
     ! do i = 1, p
@@ -634,8 +634,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     !     points_to_give_proc(i) = points_needed_from_procs(i, id)
     ! enddo
 
-    allocate(pelist(2))
-    allocate(points_to_give_proc(p), source=0)
+    ! allocate(pelist(2))
+    ! allocate(points_to_give_proc(p), source=0)
 
     do i = 1,p
         print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
@@ -664,15 +664,15 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
 
-    max_p = 0
-    do i = 1, p
-        max_p = max(max_p, points_to_give_proc(i))
-    enddo
+    ! max_p = 0
+    ! do i = 1, p
+    !     max_p = max(max_p, points_to_give_proc(i))
+    ! enddo
     ! print *, 'here 7 8'
 
-    allocate(points_to_give_proc_i(max_p, p), source=-1)
-    allocate(points_to_give_proc_j(max_p, p), source=-1)
-    pelist(1) = id
+    ! allocate(points_to_give_proc_i(max_p, p), source=-1)
+    ! allocate(points_to_give_proc_j(max_p, p), source=-1)
+    ! pelist(1) = id
 
     print *, id, 'here 4 1'
 
