@@ -712,26 +712,26 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     print *, id, 'here 4 4'
 
-    sal_ct%points_to_give_i = points_to_give_proc_i
-    sal_ct%points_to_give_j = points_to_give_proc_j
-    sal_ct%points_to_give_proc = points_to_give_proc
-    sal_ct%points_to_get_i = points_from_proc_i
-    sal_ct%points_to_get_j = points_from_proc_j
-    sal_ct%points_to_get_proc = points_needed_from_proc
+    ! sal_ct%points_to_give_i = points_to_give_proc_i
+    ! sal_ct%points_to_give_j = points_to_give_proc_j
+    ! sal_ct%points_to_give_proc = points_to_give_proc
+    ! sal_ct%points_to_get_i = points_from_proc_i
+    ! sal_ct%points_to_get_j = points_from_proc_j
+    ! sal_ct%points_to_get_proc = points_needed_from_proc
 
     ! relabel sources in tree for locally owned points
-    do i = 1, size(sal_ct%tree_struct)
-        do j = 1, sal_ct%tree_struct(i)%panel_point_count
-            i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
-            j_sp = sal_ct%tree_struct(i)%points_inside_j(j)
-            ! contained in data domain
-            if ((i_sp >= isdg) .and. (i_sp <= iedg) .and. (j_sp >= jsdg) .and. (j_sp <= jedg)) then
-                ! owned point, relabel
-                sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - idgo
-                sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - jdgo
-            end if
-        enddo
-    enddo
+    ! do i = 1, size(sal_ct%tree_struct)
+    !     do j = 1, sal_ct%tree_struct(i)%panel_point_count
+    !         i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
+    !         j_sp = sal_ct%tree_struct(i)%points_inside_j(j)
+    !         ! contained in data domain
+    !         if ((i_sp >= isdg) .and. (i_sp <= iedg) .and. (j_sp >= jsdg) .and. (j_sp <= jedg)) then
+    !             ! owned point, relabel
+    !             sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - idgo
+    !             sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - jdgo
+    !         end if
+    !     enddo
+    ! enddo
 
     print *, id, 'here 4 5'
 
