@@ -521,16 +521,16 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(proc_end_i(p), source=0)
     allocate(proc_end_j(p), source=0)
 
-    proc_start_i(id) = isc+i_off
-    proc_start_j(id) = jsc+j_off
-    proc_end_i(id) = iec+i_off
-    proc_end_j(id) = jec+j_off
+    proc_start_i(id+1) = isc+i_off
+    proc_start_j(id+1) = jsc+j_off
+    proc_end_i(id+1) = iec+i_off
+    proc_end_j(id+1) = jec+j_off
 
     ! start and end indices for all the ranks
-    call sum_across_PEs(proc_start_i, p)
-    call sum_across_PEs(proc_start_j, p)
-    call sum_across_PEs(proc_end_i, p)
-    call sum_across_PEs(proc_end_j, p)
+    ! call sum_across_PEs(proc_start_i, p)
+    ! call sum_across_PEs(proc_start_j, p)
+    ! call sum_across_PEs(proc_end_i, p)
+    ! call sum_across_PEs(proc_end_j, p)
 
     ! find unowned sources
     ! allocate(unowned_temp_i(size(xg)), source=-1)
