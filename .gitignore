@@ -14,3 +14,5 @@ configure
 Makefile.mkmf
 
 .DS_Store
+/build
+/ocean_configs
