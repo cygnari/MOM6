@@ -590,57 +590,57 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(temp_locs(p), source=0)
 
     ! points needed from each proc in global indices
-    ! do i = 1, unowned_source_count
-    !     pl = proc_loc(i)
-    !     temp_locs(pl) = temp_locs(pl) + 1
-    !     points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
-    !     points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
-    ! enddo
+    do i = 1, unowned_source_count
+        pl = proc_loc(i)
+        temp_locs(pl) = temp_locs(pl) + 1
+        points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
+        points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
+    enddo
 
-    ! count = 0
-    ! do i = 1, p ! rearrange the unowned source points so continuous by owner
-    !     do j = 1, max_p
-    !         i_sp = points_from_proc_i(j, i)
-    !         j_sp = points_from_proc_j(j, i)
-    !         if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
-    !             count = count + 1
-    !             unowned_sources_i(count) = i_sp
-    !             unowned_sources_j(count) = j_sp
-    !             e_xs(count) = xg(i_sp, j_sp)
-    !             e_ys(count) = yg(i_sp, j_sp)
-    !             e_zs(count) = zg(i_sp, j_sp)
-    !         end if
-    !     enddo
-    ! enddo
+    count = 0
+    do i = 1, p ! rearrange the unowned source points so continuous by owner
+        do j = 1, max_p
+            i_sp = points_from_proc_i(j, i)
+            j_sp = points_from_proc_j(j, i)
+            if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
+                count = count + 1
+                unowned_sources_i(count) = i_sp
+                unowned_sources_j(count) = j_sp
+                e_xs(count) = xg(i_sp, j_sp)
+                e_ys(count) = yg(i_sp, j_sp)
+                e_zs(count) = zg(i_sp, j_sp)
+            end if
+        enddo
+    enddo
 
-    ! sal_ct%e_xs = e_xs
-    ! sal_ct%e_ys = e_ys
-    ! sal_ct%e_zs = e_zs
+    sal_ct%e_xs = e_xs
+    sal_ct%e_ys = e_ys
+    sal_ct%e_zs = e_zs
 
-    ! deallocate(unowned_temp_i)
-    ! deallocate(unowned_temp_j)
+    deallocate(unowned_temp_i)
+    deallocate(unowned_temp_j)
 
-    ! allocate(points_needed_from_procs(p, p), source=0)
-    ! do i = 1, p
-    !     points_needed_from_procs(id, i) = points_needed_from_proc(i)
-    !     ! print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
-    ! enddo
+    allocate(points_needed_from_procs(p, p), source=0)
+    do i = 1, p
+        points_needed_from_procs(id, i) = points_needed_from_proc(i)
+        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i
+    enddo
     ! ! print *, 'here 7 7'
 
     ! call sum_across_PEs(points_needed_from_procs, p*p)
 
-    ! allocate(points_to_give_proc(p), source=0) ! points to give each other processor
-    ! do i = 1, p
-    !     points_to_give_proc(i) = points_needed_from_procs(i, id)
-    ! enddo
+    allocate(points_to_give_proc(p), source=0) ! points to give each other processor
+    do i = 1, p
+        points_to_give_proc(i) = points_needed_from_procs(i, id)
+    enddo
 
-    ! allocate(pelist(2))
-    ! allocate(points_to_give_proc(p), source=0)
+    allocate(pelist(2))
+    allocate(points_to_give_proc(p), source=0)
 
-    ! do i = 1,p
-    !     print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-    !     print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
-    ! enddo
+    do i = 1,p
+        print *, 'id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
+        print *, 'id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
+    enddo
     ! do i=0, p-1 ! send needed point counts
     !     if (i .ne. id) then
     !         pelist(1) = min(i, id)
