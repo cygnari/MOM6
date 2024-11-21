@@ -620,6 +620,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! deallocate(unowned_temp_i)
     ! deallocate(unowned_temp_j)
 
+    print *, id, 'here 4 0'
+
     allocate(pelist(2))
 
     do i = 1,p
