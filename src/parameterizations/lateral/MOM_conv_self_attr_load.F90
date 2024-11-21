@@ -623,6 +623,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     print *, id, 'here 4 0'
 
     allocate(pelist(2))
+    allocate(points_to_give_proc(p), source=0)
 
     do i = 1,p
         print *, 'before 1 id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
