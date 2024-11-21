@@ -533,61 +533,61 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     call sum_across_PEs(proc_end_j, p)
 
     ! find unowned sources
-    ! allocate(unowned_temp_i(size(xg)), source=-1)
-    ! allocate(unowned_temp_j(size(xg)), source=-1)
-    ! allocate(points_needed_from_proc(p), source=0)
-    ! allocate(proc_loc(size(xg)), source=-1)
-    ! pp_count = size(sal_ct%pp_interactions)
-    ! unowned_source_count = 0
-    ! do i = 1, pp_count
-    !     i_s = sal_ct%pp_interactions(i)%index_source
-    !     do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
-    !         ! loop over points in source panel, check if owned
-    !         i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
-    !         j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
-    !         ! check if point is in the data domain
-    !         if (((i_sp < isdg) .or. (i_sp > iedg)) .and. ((j_sp < jsdg) .or. (j_sp > jedg))) then
-    !             ! outside of data domain
-    !             found = .false.
-    !             kloop: do k = 1, unowned_source_count
-    !                 if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
-    !                     found = .true.
-    !                 end if
-    !             enddo kloop
-    !             if (.not. found) then
-    !                 ! new unowned point
-    !                 unowned_source_count = unowned_source_count + 1
-    !                 unowned_temp_i(unowned_source_count) = i_sp
-    !                 unowned_temp_j(unowned_source_count) = j_sp
-    !                 ! find which processor owns i_sp,j_sp
-    !                 kloop2: do k = 1, p
-    !                     if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
-    !                                                     .and. (j_sp <= proc_end_j(k))) then
-    !                         points_needed_from_proc(k) = points_needed_from_proc(k) + 1
-    !                         proc_loc(unowned_source_count) = k
-    !                     end if
-    !                 enddo kloop2
-    !             end if
-    !         end if
-    !     enddo
-    ! enddo
+    allocate(unowned_temp_i(size(xg)), source=-1)
+    allocate(unowned_temp_j(size(xg)), source=-1)
+    allocate(points_needed_from_proc(p), source=0)
+    allocate(proc_loc(size(xg)), source=-1)
+    pp_count = size(sal_ct%pp_interactions)
+    unowned_source_count = 0
+    do i = 1, pp_count
+        i_s = sal_ct%pp_interactions(i)%index_source
+        do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
+            ! loop over points in source panel, check if owned
+            i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
+            j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
+            ! check if point is in the data domain
+            if (((i_sp < isdg) .or. (i_sp > iedg)) .and. ((j_sp < jsdg) .or. (j_sp > jedg))) then
+                ! outside of data domain
+                found = .false.
+                kloop: do k = 1, unowned_source_count
+                    if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
+                        found = .true.
+                    end if
+                enddo kloop
+                if (.not. found) then
+                    ! new unowned point
+                    unowned_source_count = unowned_source_count + 1
+                    unowned_temp_i(unowned_source_count) = i_sp
+                    unowned_temp_j(unowned_source_count) = j_sp
+                    ! find which processor owns i_sp,j_sp
+                    kloop2: do k = 1, p
+                        if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
+                                                        .and. (j_sp <= proc_end_j(k))) then
+                            points_needed_from_proc(k) = points_needed_from_proc(k) + 1
+                            proc_loc(unowned_source_count) = k
+                        end if
+                    enddo kloop2
+                end if
+            end if
+        enddo
+    enddo
 
-    ! allocate(unowned_sources_i(unowned_source_count))
-    ! allocate(unowned_sources_j(unowned_source_count))
-    ! allocate(e_xs(unowned_source_count))
-    ! allocate(e_ys(unowned_source_count))
-    ! allocate(e_zs(unowned_source_count))
+    allocate(unowned_sources_i(unowned_source_count))
+    allocate(unowned_sources_j(unowned_source_count))
+    allocate(e_xs(unowned_source_count))
+    allocate(e_ys(unowned_source_count))
+    allocate(e_zs(unowned_source_count))
 
-    ! sal_ct%unowned_sources = unowned_source_count
+    sal_ct%unowned_sources = unowned_source_count
 
-    ! max_p = 0
-    ! do i = 1, p
-    !     max_p = max(max_p, points_needed_from_proc(i))
-    ! enddo
+    max_p = 0
+    do i = 1, p
+        max_p = max(max_p, points_needed_from_proc(i))
+    enddo
 
-    ! allocate(points_from_proc_i(max_p, p), source=-1)
-    ! allocate(points_from_proc_j(max_p, p), source=-1)
-    ! allocate(temp_locs(p), source=0)
+    allocate(points_from_proc_i(max_p, p), source=-1)
+    allocate(points_from_proc_j(max_p, p), source=-1)
+    allocate(temp_locs(p), source=0)
 
     ! points needed from each proc in global indices
     ! do i = 1, unowned_source_count
