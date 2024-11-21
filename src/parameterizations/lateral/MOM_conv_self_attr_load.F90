@@ -597,21 +597,21 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
     enddo
 
-    count = 0
-    do i = 1, p ! rearrange the unowned source points so continuous by owner
-        do j = 1, max_p
-            i_sp = points_from_proc_i(j, i)
-            j_sp = points_from_proc_j(j, i)
-            if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
-                count = count + 1
-                unowned_sources_i(count) = i_sp
-                unowned_sources_j(count) = j_sp
-                e_xs(count) = xg(i_sp, j_sp)
-                e_ys(count) = yg(i_sp, j_sp)
-                e_zs(count) = zg(i_sp, j_sp)
-            end if
-        enddo
-    enddo
+    ! count = 0
+    ! do i = 1, p ! rearrange the unowned source points so continuous by owner
+    !     do j = 1, max_p
+    !         i_sp = points_from_proc_i(j, i)
+    !         j_sp = points_from_proc_j(j, i)
+    !         if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
+    !             count = count + 1
+    !             unowned_sources_i(count) = i_sp
+    !             unowned_sources_j(count) = j_sp
+    !             e_xs(count) = xg(i_sp, j_sp)
+    !             e_ys(count) = yg(i_sp, j_sp)
+    !             e_zs(count) = zg(i_sp, j_sp)
+    !         end if
+    !     enddo
+    ! enddo
 
     ! sal_ct%e_xs = e_xs
     ! sal_ct%e_ys = e_ys
