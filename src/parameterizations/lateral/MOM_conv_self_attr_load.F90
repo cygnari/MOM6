@@ -572,30 +572,30 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    allocate(unowned_sources_i(unowned_source_count))
-    allocate(unowned_sources_j(unowned_source_count))
-    allocate(e_xs(unowned_source_count))
-    allocate(e_ys(unowned_source_count))
-    allocate(e_zs(unowned_source_count))
+    ! allocate(unowned_sources_i(unowned_source_count))
+    ! allocate(unowned_sources_j(unowned_source_count))
+    ! allocate(e_xs(unowned_source_count))
+    ! allocate(e_ys(unowned_source_count))
+    ! allocate(e_zs(unowned_source_count))
 
-    sal_ct%unowned_sources = unowned_source_count
+    ! sal_ct%unowned_sources = unowned_source_count
 
-    max_p = 0
-    do i = 1, p
-        max_p = max(max_p, points_needed_from_proc(i))
-    enddo
+    ! max_p = 0
+    ! do i = 1, p
+    !     max_p = max(max_p, points_needed_from_proc(i))
+    ! enddo
 
-    allocate(points_from_proc_i(max_p, p), source=-1)
-    allocate(points_from_proc_j(max_p, p), source=-1)
-    allocate(temp_locs(p), source=0)
+    ! allocate(points_from_proc_i(max_p, p), source=-1)
+    ! allocate(points_from_proc_j(max_p, p), source=-1)
+    ! allocate(temp_locs(p), source=0)
 
     ! points needed from each proc in global indices
-    do i = 1, unowned_source_count
-        pl = proc_loc(i)
-        temp_locs(pl) = temp_locs(pl) + 1
-        points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
-        points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
-    enddo
+    ! do i = 1, unowned_source_count
+    !     pl = proc_loc(i)
+    !     temp_locs(pl) = temp_locs(pl) + 1
+    !     points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
+    !     points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
+    ! enddo
 
     ! count = 0
     ! do i = 1, p ! rearrange the unowned source points so continuous by owner
