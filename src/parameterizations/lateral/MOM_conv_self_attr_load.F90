@@ -4,6 +4,7 @@ use MOM_error_handler,   only : MOM_error, FATAL, WARNING
 use MOM_grid,            only : ocean_grid_type, get_global_grid_size
 use MOM_file_parser,     only : get_param
 use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast, sync_PEs
+use MOM_coms_infra,      only : send_to_PE, recv_from_PE
 use MOM_coms,            only : reproducing_sum
 use MOM_cpu_clock,       only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_MODULE
 
@@ -634,15 +635,15 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     enddo
 
     do i = 1,p
-        ! point_counts_to_communicate(id*p+i)=points_needed_from_proc(i)
-        call send_to_PE(points_needed_from_proc(i), i-1, ID)
+        call send_to_PE(points_needed_from_proc(i), i-1)
     enddo
+
+    print *, 'here 4 0 0'
 
     ! call sum_across_PEs(point_counts_to_communicate, p*p)
 
     do i = 1,p
-        ! points_to_give_proc(i) = point_counts_to_communicate((i-1)*p+id+1)
-        call recv_from_PE(points_to_give_proc(i), i-1, .false., i-1)
+        call recv_from_PE(points_to_give_proc(i), i-1)
     enddo
 
     call sync_PEs()

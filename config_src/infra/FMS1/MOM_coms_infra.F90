@@ -529,7 +529,7 @@ subroutine recv_from_PE_int_0d(field, from_pe, blocking, tag)
   logical, optional, intent(in) :: blocking
   integer, optional, intent(in) :: tag
 
-  call mpp_recv(field, 1, from_pe, blocking, tag)
+  call mpp_recv(field, from_pe)
 end subroutine recv_from_PE_int_0d
 
 !> Receive an integer array from another PE
@@ -550,7 +550,7 @@ subroutine recv_from_PE_real_0d(field, from_pe, blocking, tag)
   logical, optional, intent(in) :: blocking
   integer, optional, intent(in) :: tag
 
-  call mpp_recv(field, 1, from_pe, blocking, tag)
+  call mpp_recv(field, from_pe)
 end subroutine recv_from_PE_real_0d
 
 ! Receive a real array from another PE
