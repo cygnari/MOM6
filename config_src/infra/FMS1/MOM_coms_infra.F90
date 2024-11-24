@@ -64,6 +64,22 @@ interface min_across_PEs
   module procedure min_across_PEs_real_1d
 end interface min_across_PEs
 
+!> Sends a field from a PE
+interface send_to_PE
+  module procedure send_to_PE_int_0d
+  module procedure send_to_PE_int_2d
+  module procedure send_to_PE_real_0d
+  module procedure send_to_PE_real_2d
+end interface send_to_PE
+
+!> Receives a field from a PE
+interface recv_from_PE
+  module procedure recv_from_PE_int_0d
+  module procedure recv_from_PE_int_2d
+  module procedure recv_from_PE_real_0d
+  module procedure recv_from_PE_real_2d
+end interface recv_from_PE
+
 contains
 
 !> Return the ID of the PE for the current process.
@@ -467,6 +483,86 @@ subroutine min_across_PEs_real_1d(field, length, pelist)
 
   call mpp_min(field, length, pelist)
 end subroutine min_across_PEs_real_1d
+
+!> Send an integer scalar from one PE to another
+subroutine send_to_PE_int_0d(field, to_pe, tag)
+  integer, intent(in) :: field 
+  integer, intent(in) :: to_pe
+  integer, optional, intent(in) :: tag
+
+  call mpp_send(field, to_pe, tag)
+end subroutine send_to_PE_int_0d
+
+!> Send a 2d integer array from one PE to another
+subroutine send_to_PE_int_2d(field, length, to_pe, tag)
+  integer, dimension(:,:), intent(in) :: field
+  integer, intent(in) :: length
+  integer, intent(in) :: to_pe
+  integer, optional, intent(in) :: tag
+
+  call mpp_send(field, to_pe, tag)
+end subroutine send_to_PE_int_2d
+
+!> Send a real scalar from one PE to another
+subroutine send_to_PE_real_0d(field, to_pe, tag)
+  real, intent(in) :: field 
+  integer, intent(in) :: to_pe
+  integer, optional, intent(in) :: tag
+
+  call mpp_send(field, to_pe, tag)
+end subroutine send_to_PE_real_0d
+
+! Send a 2d real array from one PE to another
+subroutine send_to_PE_real_2d(field, length, to_pe, tag)
+  real, dimension(:,:), intent(in) :: field 
+  integer, intent(in) :: length
+  integer, intent(in) :: to_pe
+  integer, optional, intent(in) :: tag
+
+  call mpp_send(field, length, to_pe, tag)
+end subroutine send_to_PE_real_2d
+
+!> Receive an integer scalar from another PE
+subroutine recv_from_PE_int_0d(field, from_pe, blocking, tag)
+  integer, intent(inout) :: field 
+  integer, intent(in) :: from_pe
+  logical, optional, intent(in) :: blocking
+  integer, optional, intent(in) :: tag
+
+  call mpp_recv(field, 1, from_pe, blocking, tag)
+end subroutine recv_from_PE_int_0d
+
+!> Receive an integer array from another PE
+subroutine recv_from_PE_int_2d(field, length, from_pe, blocking, tag)
+  integer, dimension(:,:), intent(inout) :: field 
+  integer, intent(in) :: length
+  integer, intent(in) :: from_pe
+  logical, optional, intent(in) :: blocking
+  integer, optional, intent(in) :: tag
+
+  call mpp_recv(field, length, from_pe, blocking, tag)
+end subroutine recv_from_PE_int_2d
+
+!> Receive a real scalar from another PE
+subroutine recv_from_PE_real_0d(field, from_pe, blocking, tag)
+  real, intent(inout) :: field 
+  integer, intent(in) :: from_pe
+  logical, optional, intent(in) :: blocking
+  integer, optional, intent(in) :: tag
+
+  call mpp_recv(field, 1, from_pe, blocking, tag)
+end subroutine recv_from_PE_real_0d
+
+! Receive a real array from another PE
+subroutine recv_from_PE_real_2d(field, length, from_pe, blocking, tag)
+  real, dimension(:,:), intent(inout) :: field 
+  integer, intent(in) :: length
+  integer, intent(in) :: from_pe
+  logical, optional, intent(in) :: blocking
+  integer, optional, intent(in) :: tag
+
+  call mpp_recv(field, length, from_pe, blocking, tag)
+end subroutine recv_from_PE_real_2d
 
 !> Implementation of any() intrinsic across PEs
 function any_across_PEs(field, pelist)
