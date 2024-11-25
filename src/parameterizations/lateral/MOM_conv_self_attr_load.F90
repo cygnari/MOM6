@@ -501,8 +501,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     integer, allocatable :: unowned_temp_i(:), unowned_temp_j(:), unowned_sources_i(:), unowned_sources_j(:)
     integer, allocatable :: points_needed_from_proc(:), points_from_proc_i(:,:), proc_loc(:), temp_locs(:)
     integer, allocatable :: points_from_proc_j(:,:), points_needed_from_procs(:,:), points_to_give_proc(:)
-    integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:), pelist(:)
-    integer, allocatable :: point_counts_to_communicate(:)
+    integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:)
+    integer, allocatable :: point_counts_to_communicate(:), points_from_proc_2d(:,:,:), points_to_give_proc_2d(:,:,:) 
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:)
     logical :: found
 
@@ -589,6 +589,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_from_proc_i(max_p, p), source=-1)
     allocate(points_from_proc_j(max_p, p), source=-1)
+    allocate(points_from_proc_2d(2, max_p, p), source=-1)
     allocate(temp_locs(p), source=0)
 
     ! points needed from each proc in global indices
@@ -597,6 +598,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         temp_locs(pl) = temp_locs(pl) + 1
         points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
         points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
+        points_from_proc_2d(1, temp_locs(pl), pl) = unowned_temp_i(i)
+        points_from_proc_2d(2, temp_locs(pl), pl) = unowned_temp_j(i)
     enddo
 
     count = 0
@@ -619,28 +622,17 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     sal_ct%e_ys = e_ys
     sal_ct%e_zs = e_zs
 
-    ! deallocate(unowned_temp_i)
-    ! deallocate(unowned_temp_j)
-
     print *, id, 'here 4 0'
 
-    allocate(pelist(2))
     allocate(points_to_give_proc(p), source=0)
-
-    allocate(point_counts_to_communicate(p*p), source=0)
 
     do i = 1,p
         print *, 'before 1 id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-        ! print *, 'before 1 id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
 
     do i = 1,p
         call send_to_PE(points_needed_from_proc(i), i-1)
     enddo
-
-    print *, 'here 4 0 0'
-
-    ! call sum_across_PEs(point_counts_to_communicate, p*p)
 
     do i = 1,p
         call recv_from_PE(points_to_give_proc(i), i-1)
@@ -649,7 +641,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     call sync_PEs()
 
     do i = 1,p
-        ! print *, 'after 2 id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
         print *, 'after 2 id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
     enddo
 
@@ -661,39 +652,23 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_to_give_proc_i(max_p, p), source=-1)
     allocate(points_to_give_proc_j(max_p, p), source=-1)
-    pelist(1) = id
+    allocate(points_to_give_proc_2d(2, max_p, p), source=-1)
 
     print *, id, 'here 4 1'
 
     do i=0, p-1 ! send point indices
-        ! pelist(2) = i
         if (points_needed_from_proc(i+1)>0) then
             print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+            call send_to_PE(points_from_proc_2d(:,:,i+1), 2*points_needed_from_proc(i+1), i)
         endif
-        ! if (i.ne.id) then
-        !     if (points_needed_from_proc(i+1)>0) then
-        !         ! print *, 'id i needed', id, i, points_needed_from_proc(i+1)
-        !         print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
-        !         pelist(1) = min(i, id)
-        !         pelist(2) = max(i, id)
-        !         call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
-        !         call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
-        !     endif
-        ! endif
     enddo
 
     print *, id, 'here 4 2'
 
     do i=0, p-1 ! receive point indices
-        ! pelist(2) = i
-        if (i.ne.id) then
-            if (points_to_give_proc(i+1)>0) then
-                print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
-                pelist(1) = min(i, id)
-                pelist(2) = max(i, id)
-                call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
-                call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
-            endif
+        if (points_to_give_proc(i+1)>0) then
+            print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+            call recv_from_PE(points_to_give_proc_2d(:,:,i+1), 2*points_to_give_proc(i+1), i)
         endif
     enddo
 
@@ -702,6 +677,13 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     call sync_PEs()
 
     print *, id, 'here 4 4'
+
+    do i = 1, p-1
+        if (points_to_give_proc(i+1)>0) then
+            points_to_give_proc_i(:,i) = points_to_give_proc_2d(1,:,i)
+            points_to_give_proc_j(:,i) = points_to_give_proc_2d(2,:,i)
+        endif
+    enddo
 
     sal_ct%points_to_give_i = points_to_give_proc_i
     sal_ct%points_to_give_j = points_to_give_proc_j
@@ -727,40 +709,38 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     print *, id, 'here 4 5'
 
     ! relabel sources in tree for unowned points needed for pp interactions
-    ! count = 0
-    ! print *, unowned_source_count
-    ! do i = 1, unowned_source_count
-    !     i_sp = unowned_sources_i(i)
-    !     j_sp = unowned_sources_j(j)
-    !     j = 1
-    !     print *, i_sp, j_sp
-    !     ! loop over tree panels, relabel points i_sp, j_sp => i, -1
-    !     treeloop: do
-    !         if (j == -1) then
-    !             exit treeloop
-    !         else 
-    !             found = .false.
-    !             kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
-    !                 i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
-    !                 j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
-    !                 if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
-    !                     found = .true.
-    !                     sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
-    !                     sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
-    !                     exit kloop3
-    !                 end if
-    !             enddo kloop3
-    !             if (found) then
-    !                 j = sal_ct%tree_struct(j)%child_panel_1
-    !             else
-    !                 j = j + 1
-    !             end if
-    !         end if
-    !     enddo treeloop
-    ! enddo
+    count = 0
+    print *, unowned_source_count
+    do i = 1, unowned_source_count
+        i_sp = unowned_sources_i(i)
+        j_sp = unowned_sources_j(j)
+        j = 1
+        print *, i_sp, j_sp
+        ! loop over tree panels, relabel points i_sp, j_sp => i, -1
+        treeloop: do
+            if (j == -1) then
+                exit treeloop
+            else 
+                found = .false.
+                kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
+                    i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
+                    j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
+                    if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
+                        found = .true.
+                        sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
+                        sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
+                        exit kloop3
+                    end if
+                enddo kloop3
+                if (found) then
+                    j = sal_ct%tree_struct(j)%child_panel_1
+                else
+                    j = j + 1
+                end if
+            end if
+        enddo treeloop
+    enddo
     print *, id, 'here 4 6'
-    ! print *, 'test'
-    ! print *, 'here 7 11'
 end subroutine calculate_communications
 
 subroutine sal_conv_init(sal_ct, G)
@@ -865,9 +845,9 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     real, intent(in) :: eta(:,:)
     real, intent(inout) :: e_ssh(:)
     integer :: max_give, max_get, p, id, i, j, i_s, j_s, i_off, j_off, count
-    real, allocatable :: points_to_give(:,:), points_received(:,:)
+    real, allocatable :: points_to_give(:,:,:), points_received(:,:,:)
     real :: area, rad2
-    integer, allocatable :: pelist(:)
+    ! integer, allocatable :: pelist(:)
 
     p = sal_ct%p; id = sal_ct%id
     i_off = G%isg - G%isc; j_off = G%jsg - G%jsc
@@ -879,8 +859,8 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
         max_get = max(max_get, sal_ct%points_to_get_proc(i))
     enddo
 
-    allocate(points_to_give(max_give, p), source=0.0)
-    allocate(points_received(max_get, p), source=0.0)
+    allocate(points_to_give(1, max_give, p), source=0.0)
+    allocate(points_received(1, max_get, p), source=0.0)
 
     do i = 1, p
         do j = 1, max_give
@@ -888,36 +868,38 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
             j_s = sal_ct%points_to_give_j(j, i)
             if ((i_s .ne. -1) .and. (j_s .ne. -1)) then
                 area = G%areaT(i_s-i_off, j_s-j_off)/rad2
-                points_to_give(j, i) = eta(i_s-i_off, j_s-j_off)*area
+                points_to_give(1, j, i) = eta(i_s-i_off, j_s-j_off)*area
             end if
         enddo
     enddo
 
-    allocate(pelist(2))
+    ! allocate(pelist(2))
     ! pelist(1) = id
 
     do i=0, p-1 ! send points
-        if (i.ne.id) then
-            if (sal_ct%points_to_give_proc(i+1)>0) then
-                pelist(1) = min(i, id)
-                pelist(2) = max(i, id)
-                call broadcast(points_to_give(:,i+1), sal_ct%points_to_give_proc(i+1), id, pelist, .false.)
-                ! call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
-                ! call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
-            endif
+        ! if (i.ne.id) then
+        if (sal_ct%points_to_give_proc(i+1)>0) then
+            ! pelist(1) = min(i, id)
+            ! pelist(2) = max(i, id)
+            call send_to_PE(points_to_give(:,:,i+1), sal_ct%points_to_give_proc(i+1), i)
+            ! call broadcast(points_to_give(:,i+1), sal_ct%points_to_give_proc(i+1), id, pelist, .false.)
+            ! call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
+            ! call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
         endif
+        ! endif
     enddo
 
     do i=0, p-1 ! receive points
-        if (i.ne.id) then
-            if (sal_ct%points_to_get_proc(i+1)>0) then
-                pelist(1) = min(i, id)
-                pelist(2) = max(i, id)
-                call broadcast(points_received(:,i+1), sal_ct%points_to_get_proc(i+1), i, pelist, .false.)
-                ! call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
-                ! call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
-            endif
+        ! if (i.ne.id) then
+        if (sal_ct%points_to_get_proc(i+1)>0) then
+            call recv_from_PE(points_received(:,:,i+1), sal_ct%points_to_get_proc(i+1), i)
+            ! pelist(1) = min(i, id)
+            ! pelist(2) = max(i, id)
+            ! call broadcast(points_received(:,i+1), sal_ct%points_to_get_proc(i+1), i, pelist, .false.)
+            ! call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
+            ! call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
         endif
+        ! endif
     enddo
 
     ! do i = 1, p 
@@ -936,7 +918,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     do i = 1, p
         do j = 1, sal_ct%points_to_get_proc(i)
             count = count + 1
-            e_ssh(count) = points_received(j, i)
+            e_ssh(count) = points_received(1, j, i)
         enddo
     enddo
 end subroutine ssh_pp_communications

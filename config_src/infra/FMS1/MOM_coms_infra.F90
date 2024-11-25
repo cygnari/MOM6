@@ -500,7 +500,7 @@ subroutine send_to_PE_int_2d(field, length, to_pe, tag)
   integer, intent(in) :: to_pe
   integer, optional, intent(in) :: tag
 
-  call mpp_send(field, to_pe, tag)
+  call mpp_send(field, length, to_pe, tag)
 end subroutine send_to_PE_int_2d
 
 !> Send a real scalar from one PE to another
