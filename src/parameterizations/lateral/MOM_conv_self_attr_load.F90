@@ -418,7 +418,7 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
     real :: xco, yco, zco, xs, ys, zs, dist, separation
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-    ic = iec-isc+1; jc = jec-jsc+1
+    ic = iec-isc+3; jc = jec-jsc+3
     allocate(source_index(size(tree_panels)))
     allocate(interaction_lists_temp(128*ic*jc))
 
@@ -447,16 +447,16 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
                         if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
                             interaction_count = interaction_count + 1
                             pc_count = pc_count + 1
-                            interaction_lists_temp(interaction_count)%index_target_i = i+isc-1
-                            interaction_lists_temp(interaction_count)%index_target_j = j+jsc-1
+                            interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
+                            interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
                             interaction_lists_temp(interaction_count)%index_source = i_s
                             interaction_lists_temp(interaction_count)%interact_type = 1
                         else  ! not well separated
                             if (tree_panels(i_s)%is_leaf) then ! leaf, do pp interaction
                                 interaction_count = interaction_count + 1
                                 pp_count = pp_count + 1
-                                interaction_lists_temp(interaction_count)%index_target_i = i+isc-1
-                                interaction_lists_temp(interaction_count)%index_target_j = j+jsc-1
+                                interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
+                                interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
                                 interaction_lists_temp(interaction_count)%index_source = i_s
                                 interaction_lists_temp(interaction_count)%interact_type = 0
                             else ! refine source panel
@@ -778,14 +778,14 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(yg(imax, jmax), source=0.0)
     allocate(zg(imax, jmax), source=0.0)
 
-    ic = iec-isc+1; jc = jec-jsc+1
+    ic = iec-isc+3; jc = jec-jsc+3
 
     allocate(xc(ic, jc), source=0.0)
     allocate(yc(ic, jc), source=0.0)
     allocate(zc(ic, jc), source=0.0)
 
-    do j = jsc, jec
-        do i = isc, iec
+    do j = jsc-1, jec+1
+        do i = isc-1, iec+1
             if (G%mask2dT(i, j) > 0.1) then
                 lat = G%geoLatT(i, j) * pi/180.0
                 lon = G%geoLonT(i, j) * pi/180.0
@@ -793,22 +793,26 @@ subroutine sal_conv_init(sal_ct, G)
                 x = sin(colat)*cos(lon)
                 y = sin(colat)*sin(lon)
                 z = cos(colat)
-                xc(i-isc+1, j-jsc+1) = x
-                yc(i-isc+1, j-jsc+1) = y
-                zc(i-isc+1, j-jsc+1) = z
-                xg(i+ig_off, j+jg_off) = x
-                yg(i+ig_off, j+jg_off) = y
-                zg(i+ig_off, j+jg_off) = z
+                xc(i-isc+2, j-jsc+2) = x
+                yc(i-isc+2, j-jsc+2) = y
+                zc(i-isc+2, j-jsc+2) = z
+                ! xg(i+ig_off, j+jg_off) = x
+                ! yg(i+ig_off, j+jg_off) = y
+                ! zg(i+ig_off, j+jg_off) = z
             else ! land point
-                xc(i-isc+1, j-jsc+1) = -2.0
-                yc(i-isc+1, j-jsc+1) = -2.0
-                zc(i-isc+1, j-jsc+1) = -2.0
-                xg(i+ig_off, j+jg_off) = -2.0
-                yg(i+ig_off, j+jg_off) = -2.0
-                zg(i+ig_off, j+jg_off) = -2.0
+                xc(i-isc+2, j-jsc+2) = -2.0
+                yc(i-isc+2, j-jsc+2) = -2.0
+                zc(i-isc+2, j-jsc+2) = -2.0
+                ! xg(i+ig_off, j+jg_off) = -2.0
+                ! yg(i+ig_off, j+jg_off) = -2.0
+                ! zg(i+ig_off, j+jg_off) = -2.0
             end if
         enddo
     enddo
+
+    xg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = xc(2:ic-1, 2:jc-1)
+    yg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = yc(2:ic-1, 2:jc-1)
+    zg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = zc(2:ic-1, 2:jc-1)
 
     call sum_across_PEs(xg, imax*jmax)
     call sum_across_PEs(yg, imax*jmax)
@@ -873,44 +877,17 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
         enddo
     enddo
 
-    ! allocate(pelist(2))
-    ! pelist(1) = id
-
     do i=0, p-1 ! send points
-        ! if (i.ne.id) then
         if (sal_ct%points_to_give_proc(i+1)>0) then
-            ! pelist(1) = min(i, id)
-            ! pelist(2) = max(i, id)
             call send_to_PE(points_to_give(:,:,i+1), sal_ct%points_to_give_proc(i+1), i)
-            ! call broadcast(points_to_give(:,i+1), sal_ct%points_to_give_proc(i+1), id, pelist, .false.)
-            ! call broadcast(points_from_proc_i(:,i+1), points_needed_from_proc(i+1), id, pelist)
-            ! call broadcast(points_from_proc_j(:,i+1), points_needed_from_proc(i+1), id, pelist)
         endif
-        ! endif
     enddo
 
     do i=0, p-1 ! receive points
-        ! if (i.ne.id) then
         if (sal_ct%points_to_get_proc(i+1)>0) then
             call recv_from_PE(points_received(:,:,i+1), sal_ct%points_to_get_proc(i+1), i)
-            ! pelist(1) = min(i, id)
-            ! pelist(2) = max(i, id)
-            ! call broadcast(points_received(:,i+1), sal_ct%points_to_get_proc(i+1), i, pelist, .false.)
-            ! call broadcast(points_to_give_proc_i(:,i+1), points_to_give_proc(i+1), i, pelist)
-            ! call broadcast(points_to_give_proc_j(:,i+1), points_to_give_proc(i+1), i, pelist)
         endif
-        ! endif
     enddo
-
-    ! do i = 1, p 
-    !     pelist(2) = i
-    !     call broadcast(points_to_give(:,i), sal_ct%points_to_give_proc(i), id, pelist, .false.)
-    ! enddo
-
-    ! do i = 1, p
-    !     pelist(2) = i
-    !     call broadcast(points_received(:,i), sal_ct%points_to_get_proc(i), i, pelist, .false.)
-    ! enddo
 
     call sync_PEs()
 
@@ -1140,10 +1117,11 @@ end subroutine proxy_source_compute
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(in) :: tx, ty, tz, sx, sy, sz
     real, intent(out) :: sal_x, sal_y, sal
-    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1
+    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9/1.0 ! modify this
+    cons = -7.029770573725803e-9/4.0 ! modify this
     cons1 = 0.0447867/1.0 ! modify this
+    eps=1e-8
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1152,14 +1130,14 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
         mp = 2.0-2.0*g
         sqp = sqrt(mp)
-        p1 = (1.0-6.21196)/(sqp*mp+1e-16)
-        p2 = (2.7+6.0)*(2*g+sqp) / (2.0*(g*g-1.0)+1e-16)
+        p1 = (1.0-6.21196)/(sqp*mp+eps)
+        p2 = (2.7+6.0)*(2*g+sqp) / (2.0*(g*g-1.0)+eps)
         val = (p1+p2)*cons ! modify this
         x32 = tz*tz
         mp2 = sqrt(1.0-x32)
         sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
         sal_x = (tx*sy-ty*sx)/mp2*val
-        sal = cons1*((1.0-6.21196)/(sqp+1e-16)+(2.7+6.0)*log(2*sqp+mp+1e-16))
+        sal = cons1*((1.0-6.21196)/(sqp+eps)+(2.7+6.0)*log(2*sqp+mp+eps))
     END IF
 end subroutine sal_grad_gfunc
 

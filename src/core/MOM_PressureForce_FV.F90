@@ -434,7 +434,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                       (za(i+1,j)*dp(i+1,j) + intp_dza(i+1,j,k))) + &
                      ((dp(i+1,j) - dp(i,j)) * intx_za(I,j) - &
                       (p(i+1,j,K) - p(i,j,K)) * intx_dza(I,j,k)) ) * &
-                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect))+e_sal_x(i,j)
+                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect))+0.5*(e_sal_x(i,j)+e_sal_x(i-1,j))
     enddo ; enddo
     !$OMP parallel do default(shared)
     do J=Jsq,Jeq ; do i=is,ie ! y derivative
@@ -443,7 +443,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                      (za(i,j+1)*dp(i,j+1) + intp_dza(i,j+1,k))) + &
                     ((dp(i,j+1) - dp(i,j)) * inty_za(i,J) - &
                      (p(i,j+1,K) - p(i,j,K)) * inty_dza(i,J,k))) * &
-                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect))+e_sal_y(i,j)
+                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect))+0.5*(e_sal_y(i,j)+e_sal_y(i,j-1))
     enddo ; enddo
 
     if (CS%GFS_scale < 1.0) then
