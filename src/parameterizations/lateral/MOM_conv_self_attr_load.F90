@@ -7,6 +7,7 @@ use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here
 use MOM_coms_infra,      only : send_to_PE, recv_from_PE
 use MOM_coms,            only : reproducing_sum
 use MOM_cpu_clock,       only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_MODULE
+use MOM_domains,         only : pass_var
 
 implicit none ; private
 
@@ -32,10 +33,12 @@ type, private :: cube_panel
     real :: mid_eta
     real :: max_eta
     real :: radius ! distance from center of panel to corner
-    integer, allocatable :: points_inside_i(:)
-    integer, allocatable :: points_inside_j(:) ! i/j indices of contained points
-    integer, allocatable :: relabeled_points_inside_i(:)
-    integer, allocatable :: relabeled_points_inside_j(:)
+    ! integer, allocatable :: points_inside_i(:)
+    ! integer, allocatable :: points_inside_j(:) ! i/j indices of contained points
+    integer, allocatable :: points_inside(:) ! indices of contained points
+    ! integer, allocatable :: relabeled_points_inside_i(:)
+    ! integer, allocatable :: relabeled_points_inside_j(:)
+    integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
 
     contains
@@ -44,8 +47,9 @@ end type cube_panel
 
 type, private :: interaction_pair 
     ! data type to represent a pp/pc interaction between a point and a cube panel
-    integer :: index_target_i
-    integer :: index_target_j
+    ! integer :: index_target_i
+    ! integer :: index_target_j
+    integer :: index_target
     integer :: index_source 
     integer :: interact_type ! 0 for PP, 1 for PC
 end type interaction_pair
@@ -58,14 +62,23 @@ type, public :: SAL_conv_type ; private
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(cube_panel), allocatable :: tree_struct(:)
-    integer, allocatable :: points_panels(:,:,:) ! points_panels(lev, i, j) = k means that point i, j (local coordinates) is contained in k
+    ! integer, allocatable :: points_panels(:,:,:) ! points_panels(lev, i, j) = k means that point i, j (local coordinates) is contained in k
+    integer, allocatable :: points_panels(:,:) 
     integer :: p ! total ranks
     integer :: id ! rank
-    integer, allocatable :: points_to_give_i(:,:), points_to_give_j(:,:), points_to_give_proc(:) ! communication patterns
-    integer, allocatable :: points_to_get_i(:,:), points_to_get_j(:,:), points_to_get_proc(:) ! second index is rank
-    integer, allocatable :: unowned_source_points_i(:), unowned_source_points_j(:)
+    ! integer, allocatable :: points_to_give_i(:,:), points_to_give_j(:,:), 
+    integer, allocatable :: points_to_give_proc(:) ! communication patterns
+    ! integer, allocatable :: points_to_get_i(:,:), points_to_get_j(:,:), 
+    integer, allocatable :: points_to_get_proc(:) ! second index is rank
+    ! integer, allocatable :: unowned_source_points_i(:), unowned_source_points_j(:)
+    integer, allocatable :: points_to_give(:,:), points_to_get(:,:), unowned_source_points(:)
     integer :: unowned_sources
     integer :: interp_degree 
+    integer, allocatable :: indexsg(:), indexeg(:), pcg(:)
+    integer, allocatable :: two_d_to_1d(:,:) ! maps between 1d and 2d
+    integer, allocatable :: one_d_to_2d_i(:), one_d_to_2d_j(:)
+    integer :: own_ocean_points
+    integer :: total_ocean_points
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
@@ -185,77 +198,116 @@ logical function contains_point(self, x, y, z) result(contains)
     end if
 end function contains_point
 
-subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
+subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_count)
     ! constructs cubed sphere tree of points
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
-    integer, intent(in) :: cluster_thresh
-    real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! these are the size of the global domain
+    integer, intent(in) :: cluster_thresh, point_count
+    ! real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! these are the size of the global domain
+    real, intent(in) :: xg(:), yg(:), zg(:)
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
-    integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:)
-    integer :: face, point_count, i, panel_count, j, count, index, index_i, index_j, k
-    integer :: which_panel, imax, jmax, ic, jc
+    integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:), temp(:)
+    integer :: face, i, panel_count, j, count, index, index_i, index_j, k
+    integer :: which_panel, imax, jmax, ic, jc, total
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
     call get_global_grid_size(G, imax, jmax)
-    point_count = imax*jmax
+    ! point_count = imax*jmax
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
+
+    print *, 'here 0 0 1'
 
     ! initialize the six top level cube panels
     do i = 1, 6
         tree_panels_temp(i)%id = i
         tree_panels_temp(i)%face = i
-        tree_panels_temp(i)%min_xi = -pi/4.0
-        tree_panels_temp(i)%mid_xi = 0.0
-        tree_panels_temp(i)%max_xi = pi/4.0
-        tree_panels_temp(i)%min_eta = -pi/4.0
-        tree_panels_temp(i)%mid_eta = 0.0
-        tree_panels_temp(i)%max_eta = pi/4.0
-        allocate(tree_panels_temp(i)%points_inside_i(point_count))
-        allocate(tree_panels_temp(i)%points_inside_j(point_count))
+        tree_panels_temp(i)%min_xi = -pi/4.D0
+        tree_panels_temp(i)%mid_xi = 0.D0
+        tree_panels_temp(i)%max_xi = pi/4.D0
+        tree_panels_temp(i)%min_eta = -pi/4.D0
+        tree_panels_temp(i)%mid_eta = 0.D0
+        tree_panels_temp(i)%max_eta = pi/4.D0
+        allocate(tree_panels_temp(i)%points_inside(point_count))
         tree_panels_temp(i)%panel_point_count = 0
         curr_loc(i) = 0
     enddo
 
-    do j=1, jmax
-        do i=1, imax
-            xval = xg(i, j)
-            yval = yg(i, j)
-            zval = zg(i, j)
-            ! print *, xval, yval, zval
-            if ((xval > -1.9) .and. (yval > -1.9) .and. (zval > -1.9)) then
-                ! points with x/y/z=-2 are land points 
-                face = face_from_xyz(xval, yval, zval)
-                curr_loc(face) = curr_loc(face) + 1
-                tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
-                tree_panels_temp(face)%points_inside_i(curr_loc(face)) = i
-                tree_panels_temp(face)%points_inside_j(curr_loc(face)) = j
-            end if
-        enddo
+    print *, 'here 0 0 2'
+
+    ! index = 0
+    ! do i = 1, imax*jmax
+    ! ! do j=1, jmax
+    ! !     do i=1, imax
+    !         ! xval = xg(i, j)
+    !         ! yval = yg(i, j)
+    !         ! zval = zg(i, j)
+    !         ! index = i+j*imax
+    !     ! index = index+1
+    !     xval = xg(i)
+    !     yval = yg(i)
+    !     zval = zg(i)
+    !     ! print *, xval, yval, zval
+    !     if ((xval > -1.9) .and. (yval > -1.9) .and. (zval > -1.9)) then
+    !         ! points with x/y/z=-2 are land points 
+    !         face = face_from_xyz(xval, yval, zval)
+    !         curr_loc(face) = curr_loc(face) + 1
+    !         tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
+    !         ! tree_panels_temp(face)%points_inside_i(curr_loc(face)) = i
+    !         ! tree_panels_temp(face)%points_inside_j(curr_loc(face)) = j
+    !         tree_panels_temp(face)%points_inside(curr_loc(face)) = i
+    !     end if
+    !     ! enddo
+    ! enddo
+
+    ! do i = 1, 6
+    !     allocate(temp_i(curr_loc(i)))
+    !     allocate(temp_j(curr_loc(i)))
+    !     ! allocate(temp(curr_loc(i)))
+    !     do j = 1, tree_panels_temp(i)%panel_point_count
+    !         temp_i(j) = tree_panels_temp(i)%points_inside_i(j)
+    !         temp_j(j) = tree_panels_temp(i)%points_inside_j(j)
+    !         ! temp(j) = tree_panels_temp(i)%points_inside(j)
+    !     enddo
+    !     call move_alloc(from=temp_i, to=tree_panels_temp(i)%points_inside_i) ! move_alloc deallocates temp_i/j
+    !     call move_alloc(from=temp_j, to=tree_panels_temp(i)%points_inside_j)
+    !     ! call move_alloc(from=temp, to=tree_panels_temp(i)%points_inside)
+    !     curr_loc(i) = 0
+    ! enddo
+
+    do i = 1, point_count
+        xval = xg(i)
+        yval = yg(i)
+        zval = zg(i)
+        face = face_from_xyz(xval, yval, zval)
+        curr_loc(face) = curr_loc(face) + 1
+        tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
+        tree_panels_temp(face)%points_inside(curr_loc(face)) = i
     enddo
 
+    print *, 'here 0 0 3'
+
     do i = 1, 6
-        allocate(temp_i(curr_loc(i)))
-        allocate(temp_j(curr_loc(i)))
+        allocate(temp(curr_loc(i)))
         do j = 1, tree_panels_temp(i)%panel_point_count
-            temp_i(j) = tree_panels_temp(i)%points_inside_i(j)
-            temp_j(j) = tree_panels_temp(i)%points_inside_j(j)
+            temp(j) = tree_panels_temp(i)%points_inside(j)
         enddo
-        call move_alloc(from=temp_i, to=tree_panels_temp(i)%points_inside_i) ! move_alloc deallocates temp_i/j
-        call move_alloc(from=temp_j, to=tree_panels_temp(i)%points_inside_j)
+        call move_alloc(from=temp, to=tree_panels_temp(i)%points_inside)
         curr_loc(i) = 0
     enddo
+
+    print *, 'here 0 0 4'
 
     i = 1
     panel_count = 6
     do while (i <= panel_count)
-        ! first check if the panel needs to be subdivided 
+        ! first check if panel needs to be divided
         count = tree_panels_temp(i)%panel_point_count
-        if ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) then
-            ! subdivide panel
+        ! print *, i, panel_count, size(tree_panels_temp), count
+        IF ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) THEN
+            ! panel is a leaf and has many points => refine
             tree_panels_temp(i)%is_leaf = .false.
             min_xi = tree_panels_temp(i)%min_xi
             mid_xi = tree_panels_temp(i)%mid_xi
@@ -263,15 +315,17 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             min_eta = tree_panels_temp(i)%min_eta
             mid_eta = tree_panels_temp(i)%mid_eta
             max_eta = tree_panels_temp(i)%max_eta
-            do j = 1, 4
+            ! four new panels are index panel_count+1 through panel_count+4
+            DO j = 1, 4
                 index = panel_count+j
+                ! print *, index, i
                 tree_panels_temp(panel_count+j)%parent_panel = i
                 tree_panels_temp(panel_count+j)%level = tree_panels_temp(i)%level + 1
                 tree_panels_temp(panel_count+j)%face = tree_panels_temp(i)%face
                 tree_panels_temp(panel_count+j)%id = panel_count+j
-                allocate(tree_panels_temp(index)%points_inside_i(count))
-                allocate(tree_panels_temp(index)%points_inside_j(count))
-            enddo
+                allocate(tree_panels_temp(index)%points_inside(count))
+            END DO
+            ! coordinates of four new panels in angle space
             tree_panels_temp(panel_count+1)%min_xi = min_xi; tree_panels_temp(panel_count+1)%min_eta = min_eta
             tree_panels_temp(panel_count+1)%max_xi = mid_xi; tree_panels_temp(panel_count+1)%max_eta = mid_eta
             tree_panels_temp(panel_count+1)%mid_xi = 0.5*(min_xi+mid_xi)
@@ -297,56 +351,59 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
             tree_panels_temp(i)%child_panel_3 = panel_count+3
             tree_panels_temp(i)%child_panel_4 = panel_count+4
 
-            do j = 1, tree_panels_temp(i)%panel_point_count
+            DO j = 1, tree_panels_temp(i)%panel_point_count
                 ! loop through points contained in parent panel, assign to sub panels
-                index_i = tree_panels_temp(i)%points_inside_i(j)
-                index_j = tree_panels_temp(i)%points_inside_j(j)
-                xval = xg(index_i, index_j)
-                yval = yg(index_i, index_j)
-                zval = zg(index_i, index_j)
+                index = tree_panels_temp(i)%points_inside(j)
+                xval = xg(index); yval = yg(index); zval = zg(index)
+                ! print *, j, index, xval, yval, zval
                 call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
-                if (xi < mid_xi) then
-                    if (eta < mid_eta) then
+                IF (xi < mid_xi) THEN
+                    IF (eta < mid_eta) THEN
                         which_panel = 1
-                    else 
+                    ELSE 
                         which_panel = 4
-                    end if
-                else 
-                    if (eta < mid_eta) then
+                    END IF
+                ELSE 
+                    IF (eta < mid_eta) THEN
                         which_panel = 2
-                    else 
+                    ELSE 
                         which_panel = 3
-                    end if
-                end if
+                    END IF
+                END IF
                 curr_loc(which_panel) = curr_loc(which_panel) + 1
                 tree_panels_temp(panel_count+which_panel)%panel_point_count = & 
                                             tree_panels_temp(panel_count+which_panel)%panel_point_count + 1
-                tree_panels_temp(panel_count+which_panel)%points_inside_i(curr_loc(which_panel)) = index_i
-                tree_panels_temp(panel_count+which_panel)%points_inside_j(curr_loc(which_panel)) = index_j
-            enddo
+                tree_panels_temp(panel_count+which_panel)%points_inside(curr_loc(which_panel)) = index
+            END DO
 
-            do j = 1, 4
-                allocate(temp_i(curr_loc(j)))
-                allocate(temp_j(curr_loc(j)))
-                do k = 1, tree_panels_temp(panel_count+j)%panel_point_count
-                    temp_i(k) = tree_panels_temp(panel_count+j)%points_inside_i(k)
-                    temp_j(k) = tree_panels_temp(panel_count+j)%points_inside_j(k)
-                enddo
-                call move_alloc(from=temp_i, to=tree_panels_temp(panel_count+j)%points_inside_i)
-                call move_alloc(from=temp_j, to=tree_panels_temp(panel_count+j)%points_inside_j)
+            ! resize points_inside array
+            DO j = 1, 4
+                allocate(temp(curr_loc(j)))
+                DO k = 1, tree_panels_temp(panel_count+j)%panel_point_count
+                    temp(k) = tree_panels_temp(panel_count+j)%points_inside(k)
+                END DO
+                call move_alloc(from=temp, to=tree_panels_temp(panel_count+j)%points_inside)
                 curr_loc(j) = 0
-            enddo
+            END DO
 
-            panel_count = panel_count+4
-        end if
+            ! sanity check to make sure all points are assigned
+            total = tree_panels_temp(panel_count+1)%panel_point_count
+            total = total + tree_panels_temp(panel_count+2)%panel_point_count
+            total = total + tree_panels_temp(panel_count+3)%panel_point_count
+            total = total + tree_panels_temp(panel_count+4)%panel_point_count
+            IF (total /= tree_panels_temp(i)%panel_point_count) THEN
+                print *, 'Error in refining tree at parent panel ', i
+            END IF
+            panel_count = panel_count + 4
+        END IF
         i = i + 1
     enddo
 
+    ! tree_panels_temp is the wrong size so move everything over to the correctly sized tree_panels
     allocate(tree_panels(panel_count))
-    do i = 1, panel_count
+    DO i = 1, panel_count
         tree_panels(i) = tree_panels_temp(i)
-        tree_panels(i)%relabeled_points_inside_i = tree_panels(i)%points_inside_i
-        tree_panels(i)%relabeled_points_inside_j = tree_panels(i)%points_inside_j
+        tree_panels(i)%relabeled_points_inside = tree_panels(i)%points_inside
         min_xi = tree_panels(i)%min_xi
         mid_xi = tree_panels(i)%mid_xi
         max_xi = tree_panels(i)%max_xi
@@ -356,152 +413,392 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh)
         ! compute the furthest distance from panel center to vertex for each panel
         call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
         call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
-        d1 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+        d1 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         call xyz_from_xieta(y1, y2, y3, min_xi, max_eta, tree_panels(i)%face)
-        d2 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+        d2 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         call xyz_from_xieta(y1, y2, y3, max_xi, max_eta, tree_panels(i)%face)
-        d3 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+        d3 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         call xyz_from_xieta(y1, y2, y3, max_xi, min_eta, tree_panels(i)%face)
-        d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+        d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
-    enddo
+    END DO
+    ! ! do while (i <= panel_count)
+    !     ! first check if the panel needs to be subdivided 
+    !     count = tree_panels_temp(i)%panel_point_count
+    !     if ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) then
+    !         ! subdivide panel
+    !         tree_panels_temp(i)%is_leaf = .false.
+    !         min_xi = tree_panels_temp(i)%min_xi
+    !         mid_xi = tree_panels_temp(i)%mid_xi
+    !         max_xi = tree_panels_temp(i)%max_xi
+    !         min_eta = tree_panels_temp(i)%min_eta
+    !         mid_eta = tree_panels_temp(i)%mid_eta
+    !         max_eta = tree_panels_temp(i)%max_eta
+    !         do j = 1, 4
+    !             index = panel_count+j
+    !             tree_panels_temp(panel_count+j)%parent_panel = i
+    !             tree_panels_temp(panel_count+j)%level = tree_panels_temp(i)%level + 1
+    !             tree_panels_temp(panel_count+j)%face = tree_panels_temp(i)%face
+    !             tree_panels_temp(panel_count+j)%id = panel_count+j
+    !             allocate(tree_panels_temp(index)%points_inside_i(count))
+    !             allocate(tree_panels_temp(index)%points_inside_j(count))
+    !             ! allocate(tree_panels_temp(index)%points_inside(count))
+    !         enddo
+    !         tree_panels_temp(panel_count+1)%min_xi = min_xi; tree_panels_temp(panel_count+1)%min_eta = min_eta
+    !         tree_panels_temp(panel_count+1)%max_xi = mid_xi; tree_panels_temp(panel_count+1)%max_eta = mid_eta
+    !         tree_panels_temp(panel_count+1)%mid_xi = 0.5*(min_xi+mid_xi)
+    !         tree_panels_temp(panel_count+1)%mid_eta = 0.5*(min_eta+mid_eta)
+
+    !         tree_panels_temp(panel_count+2)%min_xi = mid_xi; tree_panels_temp(panel_count+2)%min_eta = min_eta
+    !         tree_panels_temp(panel_count+2)%max_xi = max_xi; tree_panels_temp(panel_count+2)%max_eta = mid_eta
+    !         tree_panels_temp(panel_count+2)%mid_xi = 0.5*(mid_xi+max_xi)
+    !         tree_panels_temp(panel_count+2)%mid_eta = 0.5*(min_eta+mid_eta)
+
+    !         tree_panels_temp(panel_count+3)%min_xi = mid_xi; tree_panels_temp(panel_count+3)%min_eta = mid_eta
+    !         tree_panels_temp(panel_count+3)%max_xi = max_xi; tree_panels_temp(panel_count+3)%max_eta = max_eta
+    !         tree_panels_temp(panel_count+3)%mid_xi = 0.5*(mid_xi+max_xi)
+    !         tree_panels_temp(panel_count+3)%mid_eta = 0.5*(mid_eta+max_eta)
+
+    !         tree_panels_temp(panel_count+4)%min_xi = min_xi; tree_panels_temp(panel_count+4)%min_eta = mid_eta
+    !         tree_panels_temp(panel_count+4)%max_xi = mid_xi; tree_panels_temp(panel_count+4)%max_eta = max_eta
+    !         tree_panels_temp(panel_count+4)%mid_xi = 0.5*(min_xi+mid_xi)
+    !         tree_panels_temp(panel_count+4)%mid_eta = 0.5*(mid_eta+max_eta)
+
+    !         tree_panels_temp(i)%child_panel_1 = panel_count+1
+    !         tree_panels_temp(i)%child_panel_2 = panel_count+2
+    !         tree_panels_temp(i)%child_panel_3 = panel_count+3
+    !         tree_panels_temp(i)%child_panel_4 = panel_count+4
+
+    !         do j = 1, tree_panels_temp(i)%panel_point_count
+    !             ! loop through points contained in parent panel, assign to sub panels
+    !             index_i = tree_panels_temp(i)%points_inside_i(j)
+    !             index_j = tree_panels_temp(i)%points_inside_j(j)
+    !             ! index = tree_panels_temp(i)%points_inside(j)
+    !             xval = xg(index_i, index_j)
+    !             yval = yg(index_i, index_j)
+    !             zval = zg(index_i, index_j)
+    !             ! xval = xg(index)
+    !             ! yval = yg(index)
+    !             ! zval = zg(index)
+    !             call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
+    !             if (xi < mid_xi) then
+    !                 if (eta < mid_eta) then
+    !                     which_panel = 1
+    !                 else 
+    !                     which_panel = 4
+    !                 end if
+    !             else 
+    !                 if (eta < mid_eta) then
+    !                     which_panel = 2
+    !                 else 
+    !                     which_panel = 3
+    !                 end if
+    !             end if
+    !             curr_loc(which_panel) = curr_loc(which_panel) + 1
+    !             tree_panels_temp(panel_count+which_panel)%panel_point_count = & 
+    !                                         tree_panels_temp(panel_count+which_panel)%panel_point_count + 1
+    !             tree_panels_temp(panel_count+which_panel)%points_inside_i(curr_loc(which_panel)) = index_i
+    !             tree_panels_temp(panel_count+which_panel)%points_inside_j(curr_loc(which_panel)) = index_j
+    !             ! tree_panels_temp(panel_count+which_panel)%points_inside(curr_loc(which_panel)) = index
+    !         enddo
+
+    !         do j = 1, 4
+    !             allocate(temp_i(curr_loc(j)))
+    !             allocate(temp_j(curr_loc(j)))
+    !             ! allocate(temp(curr_loc(j))
+    !             do k = 1, tree_panels_temp(panel_count+j)%panel_point_count
+    !                 temp_i(k) = tree_panels_temp(panel_count+j)%points_inside_i(k)
+    !                 temp_j(k) = tree_panels_temp(panel_count+j)%points_inside_j(k)
+    !                 ! temp(k) = tree_panels_temp(panel_count+j)%points_inside(k)
+    !             enddo
+    !             call move_alloc(from=temp_i, to=tree_panels_temp(panel_count+j)%points_inside_i)
+    !             call move_alloc(from=temp_j, to=tree_panels_temp(panel_count+j)%points_inside_j)
+    !             ! call move_alloc(from=temp, to=tree_panels_temp(panel_count+j)%points_inside)
+    !             curr_loc(j) = 0
+    !         enddo
+
+    !         panel_count = panel_count+4
+    !     end if
+    !     i = i + 1
+    ! enddo
+
+    ! print *, 'here 0 0 5'
+
+    ! allocate(tree_panels(panel_count))
+    ! do i = 1, panel_count
+    !     tree_panels(i) = tree_panels_temp(i)
+    !     tree_panels(i)%relabeled_points_inside_i = tree_panels(i)%points_inside_i
+    !     tree_panels(i)%relabeled_points_inside_j = tree_panels(i)%points_inside_j
+    !     min_xi = tree_panels(i)%min_xi
+    !     mid_xi = tree_panels(i)%mid_xi
+    !     max_xi = tree_panels(i)%max_xi
+    !     min_eta = tree_panels(i)%min_eta
+    !     mid_eta = tree_panels(i)%mid_eta
+    !     max_eta = tree_panels(i)%max_eta
+    !     ! compute the furthest distance from panel center to vertex for each panel
+    !     call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
+    !     call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
+    !     d1 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+    !     call xyz_from_xieta(y1, y2, y3, min_xi, max_eta, tree_panels(i)%face)
+    !     d2 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+    !     call xyz_from_xieta(y1, y2, y3, max_xi, max_eta, tree_panels(i)%face)
+    !     d3 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+    !     call xyz_from_xieta(y1, y2, y3, max_xi, min_eta, tree_panels(i)%face)
+    !     d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0), -1.0))
+    !     tree_panels(i)%radius = MAX(d1, d2, d3, d4)
+    ! enddo
+
+    print *, 'here 0 0 6'
 
 end subroutine tree_traversal
 
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
+    ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
     type(ocean_grid_type), intent(in) :: G
     type(cube_panel), intent(in) :: tree_panels(:)
-    real, intent(in) :: x(:,:), y(:,:), z(:,:) ! size of computational domain
+    ! real, intent(in) :: x(:,:), y(:,:), z(:,:) ! size of computational domain
+    real, intent(in) :: x(:), y(:), z(:)
     integer, intent(in) :: levs
-    integer, intent(inout) :: points_panels(:,:,:)
+    ! integer, intent(inout) :: points_panels(:,:,:)
+    integer, intent(inout) :: points_panels(:,:)
     integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
     real :: xco, yco, zco
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     ic = iec-isc+1; jc = jec-jsc+1
 
-    do j=1, jc
-        do i = 1, ic
-            level = 1
-            k = 1
-            xco = x(i, j)
-            yco = y(i, j)
-            zco = z(i, j)
-            if ((xco > -2.0) .and. (yco > -2.0) .and. (zco > -2.0)) then
-                treeloop: do ! loop over tree panels
-                    if (k == -1) then
-                        exit treeloop
-                    else if (tree_panels(k)%contains_point(xco, yco, zco)) then
-                        ! point i,j is contained in panel k
-                        ! point i,j is i+isc-1, j+jsc-1
-                        points_panels(level, i, j) = k
-                        level = level + 1
-                        k = tree_panels(k)%child_panel_1
-                    else
-                        k = k + 1
-                    end if
-                enddo treeloop
-            end if
-        enddo
-    enddo
+    print *, 'here 0 2 0'
+    DO i = 1, size(x)
+        level = 1
+        j = 1
+        jloop: DO ! do loop over tree panels
+            IF (j == -1) THEN
+                exit jloop
+            ELSE IF (tree_panels(j)%contains_point(x(i), y(i), z(i))) THEN
+                ! point i is contained in panel j
+                points_panels(level, i) = j
+                level = level + 1
+                j = tree_panels(j)%child_panel_1
+            ELSE
+                j = j + 1
+            END IF
+        END DO jloop
+    END DO
+    ! do j=1, jc
+    !     do i = 1, ic
+    ! ! do i = 1, size(x)
+    !         level = 1
+    !         k = 1
+    !         xco = x(i, j)
+    !         yco = y(i, j)
+    !         zco = z(i, j)
+    !         ! xco = x(i)
+    !         ! yco = y(i)
+    !         ! zco = z(i)
+    !         if ((xco > -1.9) .and. (yco > -1.9) .and. (zco > -1.9)) then
+    !             treeloop: do ! loop over tree panels
+    !                 if (k == -1) then
+    !                     exit treeloop
+    !                 else if (tree_panels(k)%contains_point(xco, yco, zco)) then
+    !                     ! point i,j is contained in panel k
+    !                     ! point i,j is i+isc-1, j+jsc-1
+    !                     points_panels(level, i, j) = k
+    !                     ! points_panels1d(level, i) = k
+    !                     level = level + 1
+    !                     k = tree_panels(k)%child_panel_1
+    !                 else
+    !                     k = k + 1
+    !                 end if
+    !             enddo treeloop
+    !         end if
+    !     enddo
+    ! enddo
 end subroutine assign_points_to_panels
 
-subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_panels, x, y, z, theta)
+subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_panels, x, y, z, theta, point_count)
     type(ocean_grid_type), intent(in) :: G
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
-    real, intent(in) :: x(:,:), y(:,:), z(:,:), theta ! x, y, z are the computational domain
+    ! real, intent(in) :: x(:,:), y(:,:), z(:,:), theta ! x, y, z are the target domain
+    real, intent(in) :: x(:), y(:), z(:), theta
+    integer, intent(in) :: point_count
     integer, allocatable :: source_index(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, l
-    integer :: isc, iec, jsc, jec, ic, jc
-    real :: xco, yco, zco, xs, ys, zs, dist, separation
+    integer :: isc, iec, jsc, jec, ic, jc, index, tree_traverse_count, id
+    real :: xco, yco, zco, xs, ys, zs, dist, separation, x1s, x2s, x3s, x1t, x2t, x3t
+    logical :: well_separated
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-    ic = iec-isc+3; jc = jec-jsc+3
+    ! ic = iec-isc+3; jc = jec-jsc+3
+    ! ic=iec-isc+1; jc=jec-jsc
     allocate(source_index(size(tree_panels)))
-    allocate(interaction_lists_temp(128*ic*jc))
+    allocate(interaction_lists_temp(100*point_count))
 
     interaction_count = 0
     pp_count = 0
     pc_count = 0
 
-    do j = 1, jc
-        iloop: do i = 1, ic
-            tt_count = 6
-            do k = 1, 6
-                source_index(k) = k
-            enddo
-            curr_loc = 1
-            xco = x(i, j)
-            yco = y(i, j)
-            zco = z(i, j)
-            if ((xco > -2.0) .and. (yco > -2.0) .and. (zco > -2.0)) then
-                panelloop: do while (curr_loc <= tt_count) ! go through source panels
-                    i_s = source_index(curr_loc)
-                    c_s = tree_panels(i_s)%panel_point_count
-                    if (c_s > 0) then ! cluster has points
-                        call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
-                        dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0_8), 1.0_8))
-                        separation = tree_panels(i_s)%radius/dist
-                        if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
-                            interaction_count = interaction_count + 1
-                            pc_count = pc_count + 1
-                            interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
-                            interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
-                            interaction_lists_temp(interaction_count)%index_source = i_s
-                            interaction_lists_temp(interaction_count)%interact_type = 1
-                        else  ! not well separated
-                            if (tree_panels(i_s)%is_leaf) then ! leaf, do pp interaction
-                                interaction_count = interaction_count + 1
-                                pp_count = pp_count + 1
-                                interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
-                                interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
-                                interaction_lists_temp(interaction_count)%index_source = i_s
-                                interaction_lists_temp(interaction_count)%interact_type = 0
-                            else ! refine source panel
-                                source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
-                                source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
-                                source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
-                                source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
-                                tt_count = tt_count + 4
-                            end if
-                        end if
-                    end if
-                    curr_loc = curr_loc + 1
-                enddo panelloop
-            end if
-        enddo iloop
-    enddo
+    ! do j = 1, jc
+    !     iloop: do i = 1, ic
+    ! ! do i = 1, ic*jc
+    !     tt_count = 6
+    !         do k = 1, 6
+    !             source_index(k) = k
+    !         enddo
+    !         curr_loc = 1
+    !         ! index = i+j*ic
+    !         xco = x(i, j)
+    !         yco = y(i, j)
+    !         zco = z(i, j)
+    !         ! xco = x(i)
+    !         ! yco = y(i)
+    !         ! zco = z(i)
+    !         if ((xco > -1.9) .and. (yco > -1.9) .and. (zco > -1.9)) then
+    !             panelloop: do while (curr_loc <= tt_count) ! go through source panels
+    !                 i_s = source_index(curr_loc)
+    !                 c_s = tree_panels(i_s)%panel_point_count
+    !                 if (c_s > 0) then ! cluster has points
+    !                     call xyz_from_xieta(xco, yco, zco, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
+    !                     dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0_8), 1.0_8))
+    !                     separation = tree_panels(i_s)%radius/dist
+    !                     if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
+    !                         interaction_count = interaction_count + 1
+    !                         pc_count = pc_count + 1
+    !                         interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
+    !                         interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
+    !                         ! interaction_lists_temp(interaction_count)%index_target = i
+    !                         interaction_lists_temp(interaction_count)%index_source = i_s
+    !                         interaction_lists_temp(interaction_count)%interact_type = 1
+    !                     else  ! not well separated
+    !                         if (tree_panels(i_s)%is_leaf) then ! leaf, do pp interaction
+    !                             interaction_count = interaction_count + 1
+    !                             pp_count = pp_count + 1
+    !                             interaction_lists_temp(interaction_count)%index_target_i = i+isc-2
+    !                             interaction_lists_temp(interaction_count)%index_target_j = j+jsc-2
+    !                             ! interaction_lists_temp(interaction_count)%index_target = i
+    !                             interaction_lists_temp(interaction_count)%index_source = i_s
+    !                             interaction_lists_temp(interaction_count)%interact_type = 0
+    !                         else ! refine source panel
+    !                             source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
+    !                             source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
+    !                             source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
+    !                             source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
+    !                             tt_count = tt_count + 4
+    !                         end if
+    !                     end if
+    !                 end if
+    !                 curr_loc = curr_loc + 1
+    !             enddo panelloop
+    !         end if
+    !     enddo iloop
+    ! enddo
+    ! ! enddo
+
+    ! allocate(pc_interactions(pc_count))
+    ! allocate(pp_interactions(pp_count))
+
+    ! k = 0
+    ! l = 0
+    ! do i = 1, interaction_count
+    !     if (interaction_lists_temp(i)%interact_type == 1) then
+    !         k = k + 1
+    !         pc_interactions(k) = interaction_lists_temp(i)
+    !     else
+    !         l = l + 1
+    !         pp_interactions(l) = interaction_lists_temp(i)
+    !     end if
+    ! enddo
+    interaction_count = 0
+    pp_count = 0
+    pc_count = 0
+    id = PE_here()
+    ! print *, id, interaction_count, pp_count, pc_count, size(x), point_count, size(tree_panels)
+    DO i = 1, size(x) ! loop over own target points
+        tree_traverse_count = 6
+        DO j = 1, 6
+            source_index(j) = j
+        END DO
+        curr_loc = 1
+        x1t = x(i)
+        x2t = y(i)
+        x3t = z(i)
+        ! print *, id, interaction_count, size(interaction_lists_temp)
+        ! print *, id, i, pp_count, pc_count, pp_count+pc_count, size(interaction_lists_temp)
+        DO WHILE (curr_loc <= tree_traverse_count) ! go through the source panels
+            i_s = source_index(curr_loc)
+            c_s = tree_panels(i_s)%panel_point_count
+            ! print *, curr_loc, tree_traverse_count, i_s, c_s, i
+            IF (c_s > 0) THEN ! check that source panel has points 
+                ! two ways of checking separation
+                ! way 1, compute theta from distance between center of panel and target
+                call xyz_from_xieta(x1s, x2s, x3s, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
+                dist = ACOS(MIN(MAX(x1t*x1s+x2t*x2s+x3t*x3s, -1.0_8), 1.0_8))
+                separation = tree_panels(i_s)%radius/dist
+                well_separated = .false.
+                IF ((dist > 0) .and. (separation < theta)) THEN
+                    well_separated = .true.
+                END IF
+                IF (well_separated) THEN
+                    ! well separated, do cluster interaction
+                    interaction_count = interaction_count + 1
+                    interaction_lists_temp(interaction_count)%index_target = i
+                    interaction_lists_temp(interaction_count)%index_source = i_s
+                    interaction_lists_temp(interaction_count)%interact_type = 1
+                    pc_count = pc_count + 1
+                    ! print *, 1, i, j
+                ELSE IF (tree_panels(i_s)%is_leaf) THEN
+                    ! source panel is a leaf, cannot refine further
+                    interaction_count = interaction_count + 1
+                    interaction_lists_temp(interaction_count)%index_target = i
+                    interaction_lists_temp(interaction_count)%index_source = i_s
+                    interaction_lists_temp(interaction_count)%interact_type = 0
+                    pp_count = pp_count + 1
+                    ! print *, 0, i, j
+                ELSE 
+                    ! source panel is not a leaf and is not well separated, refine 
+                    source_index(tree_traverse_count+1) = tree_panels(i_s)%child_panel_1
+                    source_index(tree_traverse_count+2) = tree_panels(i_s)%child_panel_2
+                    source_index(tree_traverse_count+3) = tree_panels(i_s)%child_panel_3
+                    source_index(tree_traverse_count+4) = tree_panels(i_s)%child_panel_4
+                    tree_traverse_count = tree_traverse_count + 4
+                END IF
+            END IF
+            curr_loc = curr_loc + 1
+        END DO
+    END DO
+
+    print *, id, pc_count, pp_count
 
     allocate(pc_interactions(pc_count))
     allocate(pp_interactions(pp_count))
-
     k = 0
     l = 0
-    do i = 1, interaction_count
-        if (interaction_lists_temp(i)%interact_type == 1) then
+    DO i = 1, interaction_count
+        IF (interaction_lists_temp(i)%interact_type == 1) THEN
             k = k + 1
             pc_interactions(k) = interaction_lists_temp(i)
-        else
+        ELSE
             l = l + 1
             pp_interactions(l) = interaction_lists_temp(i)
-        end if
-    enddo
+        END IF
+    END DO
 end subroutine interaction_list_compute
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     type(sal_conv_type), intent(inout) :: sal_ct
-    real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! computational domain size
+    ! real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! computational domain size
+    real, intent(in) :: xg(:), yg(:), zg(:)
     type(ocean_grid_type), intent(in) :: G
     integer :: p, id, unowned_source_count, pp_count, i, i_s, j, i_sp, j_sp, k, max_p, pl, count
     integer :: isg, ieg, jsg, jeg, isc, iec, jsc, jec, i_off, j_off, i_sp2, j_sp2, isdg, iedg, jsdg, jedg
-    integer :: idgo, jdgo, isd, jsd
+    integer :: idgo, jdgo, isd, jsd, own_points
     integer, allocatable :: proc_start_i(:), proc_start_j(:), proc_end_i(:), proc_end_j(:)
     integer, allocatable :: unowned_temp_i(:), unowned_temp_j(:), unowned_sources_i(:), unowned_sources_j(:)
     integer, allocatable :: points_needed_from_proc(:), points_from_proc_i(:,:), proc_loc(:), temp_locs(:)
     integer, allocatable :: points_from_proc_j(:,:), points_needed_from_procs(:,:), points_to_give_proc(:)
-    integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:)
+    integer, allocatable :: points_to_give_proc_i(:,:), points_to_give_proc_j(:,:), unowned_temp(:), unowned_sources(:)
+    integer, allocatable :: points_from_proc(:,:), points_to_give_proc_index(:,:)
     integer, allocatable :: point_counts_to_communicate(:), points_from_proc_2d(:,:,:), points_to_give_proc_2d(:,:,:) 
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:)
     logical :: found
@@ -509,62 +806,74 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     p = sal_ct%p
     id = sal_ct%id
 
-    isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
-    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-    isd = G%isd; jsd = G%jsd
-    idgo = G%idg_offset; jdgo = G%jdg_offset
-    isdg = G%isd_global; jsdg = G%jsd_global
-    iedg = G%ied+idgo; jedg = G%jed+jdgo
-    i_off = G%idg_offset+isg-isd
-    j_off = G%jdg_offset+jsg-jsd
+!     isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
+!     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+!     isd = G%isd; jsd = G%jsd
+!     idgo = G%idg_offset; jdgo = G%jdg_offset
+!     isdg = G%isd_global; jsdg = G%jsd_global
+!     iedg = G%ied+idgo; jedg = G%jed+jdgo
+!     i_off = G%idg_offset+isg-isd
+!     j_off = G%jdg_offset+jsg-jsd
 
-    allocate(proc_start_i(p), source=0)
-    allocate(proc_start_j(p), source=0)
-    allocate(proc_end_i(p), source=0)
-    allocate(proc_end_j(p), source=0)
+    isc = sal_ct%indexsg(id+1); iec = sal_ct%indexeg(id+1)
+    own_points = sal_ct%pcg(id+1)
 
-    proc_start_i(id+1) = isc+i_off
-    proc_start_j(id+1) = jsc+j_off
-    proc_end_i(id+1) = iec+i_off
-    proc_end_j(id+1) = jec+j_off
+!     allocate(proc_start_i(p), source=0)
+!     allocate(proc_start_j(p), source=0)
+!     allocate(proc_end_i(p), source=0)
+!     allocate(proc_end_j(p), source=0)
 
-    ! start and end indices for all the ranks
-    call sum_across_PEs(proc_start_i, p)
-    call sum_across_PEs(proc_start_j, p)
-    call sum_across_PEs(proc_end_i, p)
-    call sum_across_PEs(proc_end_j, p)
+!     proc_start_i(id+1) = isc+i_off
+!     proc_start_j(id+1) = jsc+j_off
+!     proc_end_i(id+1) = iec+i_off
+!     proc_end_j(id+1) = jec+j_off
 
-    ! find unowned sources
-    allocate(unowned_temp_i(size(xg)), source=-1)
-    allocate(unowned_temp_j(size(xg)), source=-1)
+!     ! start and end indices for all the ranks
+!     call sum_across_PEs(proc_start_i, p)
+!     call sum_across_PEs(proc_start_j, p)
+!     call sum_across_PEs(proc_end_i, p)
+!     call sum_across_PEs(proc_end_j, p)
+
+!     ! find unowned sources
+!     allocate(unowned_temp_i(size(xg)), source=-1)
+!     allocate(unowned_temp_j(size(xg)), source=-1)
+    allocate(unowned_temp(size(xg)), source=-1)
     allocate(points_needed_from_proc(p), source=0)
     allocate(proc_loc(size(xg)), source=-1)
+    print *, id, 'here 4 -4'
     pp_count = size(sal_ct%pp_interactions)
     unowned_source_count = 0
+    print *, id, sal_ct%indexsg(id+1), sal_ct%indexeg(id+1)
     do i = 1, pp_count
         i_s = sal_ct%pp_interactions(i)%index_source
+        ! print *, pp_count, i, i_s
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
             ! loop over points in source panel, check if owned
-            i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
-            j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
+            ! i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
+            ! j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
+            i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
             ! check if point is in the data domain
-            if (((i_sp < isdg) .or. (i_sp > iedg)) .and. ((j_sp < jsdg) .or. (j_sp > jedg))) then
-                ! outside of data domain
+            ! if (((i_sp < isdg) .or. (i_sp > iedg)) .or. ((j_sp < jsdg) .or. (j_sp > jedg))) then ! outside of data domain
+            ! if (((i_sp < isc) .or. (i_sp > iec)) .or. ((j_sp < jsc) .or. (j_sp > jec))) then ! outside of computational domain
+            if ((i_sp < isc) .or. (i_sp > iec)) then ! outside of computational domain
                 found = .false.
                 kloop: do k = 1, unowned_source_count
-                    if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
+                    ! if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
+                    if (unowned_temp(k) == i_sp) then
                         found = .true.
                     end if
                 enddo kloop
                 if (.not. found) then
                     ! new unowned point
                     unowned_source_count = unowned_source_count + 1
-                    unowned_temp_i(unowned_source_count) = i_sp
-                    unowned_temp_j(unowned_source_count) = j_sp
+                    ! unowned_temp_i(unowned_source_count) = i_sp
+                    ! unowned_temp_j(unowned_source_count) = j_sp
+                    unowned_temp(unowned_source_count) = i_sp
                     ! find which processor owns i_sp,j_sp
                     kloop2: do k = 1, p
-                        if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
-                                                        .and. (j_sp <= proc_end_j(k))) then
+                        if ((i_sp >= sal_ct%indexsg(k)) .and. (i_sp <= sal_ct%indexeg(k))) then
+                        ! if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
+                        !                                 .and. (j_sp <= proc_end_j(k))) then
                             points_needed_from_proc(k) = points_needed_from_proc(k) + 1
                             proc_loc(unowned_source_count) = k
                         end if
@@ -574,8 +883,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    allocate(unowned_sources_i(unowned_source_count))
-    allocate(unowned_sources_j(unowned_source_count))
+    print *, id, 'here 4 -3'
+
+    ! allocate(unowned_sources_i(unowned_source_count))
+    allocate(unowned_sources(unowned_source_count))
+    ! allocate(unowned_sources_j(unowned_source_count))
     allocate(e_xs(unowned_source_count))
     allocate(e_ys(unowned_source_count))
     allocate(e_zs(unowned_source_count))
@@ -587,33 +899,47 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         max_p = max(max_p, points_needed_from_proc(i))
     enddo
 
-    allocate(points_from_proc_i(max_p, p), source=-1)
-    allocate(points_from_proc_j(max_p, p), source=-1)
-    allocate(points_from_proc_2d(2, max_p, p), source=-1)
+    print *, id, 'here 4 -2'
+
+    ! allocate(points_from_proc_i(max_p, p), source=-1)
+    ! allocate(points_from_proc_j(max_p, p), source=-1)
+    ! allocate(points_from_proc_2d(2, max_p, p), source=-1)
+    allocate(points_from_proc(max_p, p), source=-1)
+    allocate(points_from_proc_2d(1, max_p, p), source=-1)
     allocate(temp_locs(p), source=0)
 
     ! points needed from each proc in global indices
     do i = 1, unowned_source_count
         pl = proc_loc(i)
         temp_locs(pl) = temp_locs(pl) + 1
-        points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
-        points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
-        points_from_proc_2d(1, temp_locs(pl), pl) = unowned_temp_i(i)
-        points_from_proc_2d(2, temp_locs(pl), pl) = unowned_temp_j(i)
+        ! points_from_proc_i(temp_locs(pl), pl) = unowned_temp_i(i)
+        ! points_from_proc_j(temp_locs(pl), pl) = unowned_temp_j(i)
+        points_from_proc(temp_locs(pl), pl) = unowned_temp(i)
+        ! points_from_proc_2d(1, temp_locs(pl), pl) = unowned_temp_i(i)
+        ! points_from_proc_2d(2, temp_locs(pl), pl) = unowned_temp_j(i)
+        points_from_proc_2d(1, temp_locs(pl), pl) = unowned_temp(i)
     enddo
+
+    print *, id, 'here 4 -1'
 
     count = 0
     do i = 1, p ! rearrange the unowned source points so continuous by owner
         do j = 1, max_p
+            ! i_sp = points_from_proc_i(j, i)
+            ! j_sp = points_from_proc_j(j, i)
             i_sp = points_from_proc_i(j, i)
-            j_sp = points_from_proc_j(j, i)
-            if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
+            ! if ((i_sp .ne. -1) .and. (j_sp .ne. -1)) then
+            if (i_sp .ne. -1) then
                 count = count + 1
-                unowned_sources_i(count) = i_sp
-                unowned_sources_j(count) = j_sp
-                e_xs(count) = xg(i_sp, j_sp)
-                e_ys(count) = yg(i_sp, j_sp)
-                e_zs(count) = zg(i_sp, j_sp)
+                ! unowned_sources_i(count) = i_sp
+                ! unowned_sources_j(count) = j_sp
+                unowned_sources(count) = i_sp
+                ! e_xs(count) = xg(i_sp, j_sp)
+                ! e_ys(count) = yg(i_sp, j_sp)
+                ! e_zs(count) = zg(i_sp, j_sp)
+                e_xs(count) = xg(i_sp)
+                e_ys(count) = yg(i_sp)
+                e_zs(count) = zg(i_sp)
             end if
         enddo
     enddo
@@ -650,16 +976,18 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     enddo
     print *, 'here 7 8'
 
-    allocate(points_to_give_proc_i(max_p, p), source=-1)
-    allocate(points_to_give_proc_j(max_p, p), source=-1)
-    allocate(points_to_give_proc_2d(2, max_p, p), source=-1)
+    ! allocate(points_to_give_proc_i(max_p, p), source=-1)
+    ! allocate(points_to_give_proc_j(max_p, p), source=-1)
+    allocate(points_to_give_proc_index(max_p, p), source=-1)
+    ! allocate(points_to_give_proc_2d(2, max_p, p), source=-1)
+    allocate(points_to_give_proc_2d(1, max_p, p), source=-1)
 
     print *, id, 'here 4 1'
 
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
             print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
-            call send_to_PE(points_from_proc_2d(:,:,i+1), 2*points_needed_from_proc(i+1), i)
+            call send_to_PE(points_from_proc_2d(:,:,i+1), points_needed_from_proc(i+1), i)
         endif
     enddo
 
@@ -668,7 +996,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     do i=0, p-1 ! receive point indices
         if (points_to_give_proc(i+1)>0) then
             print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
-            call recv_from_PE(points_to_give_proc_2d(:,:,i+1), 2*points_to_give_proc(i+1), i)
+            call recv_from_PE(points_to_give_proc_2d(:,:,i+1), points_to_give_proc(i+1), i)
         endif
     enddo
 
@@ -680,28 +1008,34 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i = 1, p-1
         if (points_to_give_proc(i+1)>0) then
-            points_to_give_proc_i(:,i) = points_to_give_proc_2d(1,:,i)
-            points_to_give_proc_j(:,i) = points_to_give_proc_2d(2,:,i)
+            ! points_to_give_proc_i(:,i) = points_to_give_proc_2d(1,:,i)
+            ! points_to_give_proc_j(:,i) = points_to_give_proc_2d(2,:,i)
+            points_to_give_proc_index(:,i) = points_to_give_proc_2d(1,:,i)-isc ! shift to local indices 
         endif
     enddo
 
-    sal_ct%points_to_give_i = points_to_give_proc_i
-    sal_ct%points_to_give_j = points_to_give_proc_j
+    ! sal_ct%points_to_give_i = points_to_give_proc_i
+    ! sal_ct%points_to_give_j = points_to_give_proc_j
+    sal_ct%points_to_give = points_to_give_proc_index
     sal_ct%points_to_give_proc = points_to_give_proc
-    sal_ct%points_to_get_i = points_from_proc_i
-    sal_ct%points_to_get_j = points_from_proc_j
+    sal_ct%points_to_get = points_from_proc
+    ! sal_ct%points_to_get_i = points_from_proc_i
+    ! sal_ct%points_to_get_j = points_from_proc_j
     sal_ct%points_to_get_proc = points_needed_from_proc
 
     ! relabel sources in tree for locally owned points
     do i = 1, size(sal_ct%tree_struct)
         do j = 1, sal_ct%tree_struct(i)%panel_point_count
-            i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
-            j_sp = sal_ct%tree_struct(i)%points_inside_j(j)
+            ! i_sp = sal_ct%tree_struct(i)%points_inside_i(j)
+            ! j_sp = sal_ct%tree_struct(i)%points_inside_j(j)
+            i_sp = sal_ct%tree_struct(i)%points_inside(j)
             ! contained in data domain
-            if ((i_sp >= isdg) .and. (i_sp <= iedg) .and. (j_sp >= jsdg) .and. (j_sp <= jedg)) then
+            ! if ((i_sp >= isdg) .and. (i_sp <= iedg) .and. (j_sp >= jsdg) .and. (j_sp <= jedg)) then
+            if ((i_sp >= isc) .and. (i_sp <= iec)) then
                 ! owned point, relabel
-                sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - idgo
-                sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - jdgo
+                ! sal_ct%tree_struct(i)%relabeled_points_inside_i(j) = i_sp - idgo
+                sal_ct%tree_struct(i)%relabeled_points_inside(j) = i_sp - isc + 1
+                ! sal_ct%tree_struct(i)%relabeled_points_inside_j(j) = j_sp - jdgo
             end if
         enddo
     enddo
@@ -712,23 +1046,27 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     count = 0
     print *, unowned_source_count
     do i = 1, unowned_source_count
-        i_sp = unowned_sources_i(i)
-        j_sp = unowned_sources_j(j)
+        ! i_sp = unowned_sources_i(i)
+        ! j_sp = unowned_sources_j(i)
+        i_sp = unowned_sources(i)
         j = 1
         print *, i_sp, j_sp
-        ! loop over tree panels, relabel points i_sp, j_sp => i, -1
+        ! loop over tree panels, relabel points i_sp, j_sp => i+own_points
         treeloop: do
             if (j == -1) then
                 exit treeloop
             else 
                 found = .false.
                 kloop3: do k = 1, sal_ct%tree_struct(j)%panel_point_count
-                    i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
-                    j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
-                    if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
+                    ! i_sp2 = sal_ct%tree_struct(j)%points_inside_i(k)
+                    ! j_sp2 = sal_ct%tree_struct(j)%points_inside_j(k)
+                    i_sp2 = sal_ct%tree_struct(j)%points_inside(k)
+                    ! if ((i_sp == i_sp2) .and. (j_sp == j_sp2)) then
+                    if (i_sp == i_sp2) then
                         found = .true.
-                        sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
-                        sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
+                        ! sal_ct%tree_struct(j)%relabeled_points_inside_i(k) = i
+                        ! sal_ct%tree_struct(j)%relabeled_points_inside_j(k) = -1
+                        sal_ct%tree_struct(j)%relabeled_points_inside(k) = i+own_points
                         exit kloop3
                     end if
                 enddo kloop3
@@ -751,9 +1089,10 @@ subroutine sal_conv_init(sal_ct, G)
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
     integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank, i_off, j_off, isd, ied, jsd, jed
-    integer, allocatable :: points_panels(:,:,:)
-    real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:)
+    integer :: max_level, proc_rank, i_off, j_off, isd, ied, jsd, jed, rank, itc, jtc, count, pointcount
+    integer, allocatable :: points_panels(:,:,:), indexsg(:), indexeg(:), pcg(:)
+    real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:), xt(:,:), yt(:,:), zt(:,:)
+    real, allocatable :: xg1d(:), yg1d(:), zg1d(:), xc1d(:), yc1d(:), zc1d(:), xt1d(:), yt1d(:), zt1d(:)
     real :: lat, lon, colat, x, y, z, pi
 
     ! fix this
@@ -769,71 +1108,127 @@ subroutine sal_conv_init(sal_ct, G)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
-    isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
+    ! isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
     ig_off = G%idg_offset+isg-isd
     jg_off = G%jdg_offset+jsg-jsd
+    isg = isc+ig_off; ieg = iec+ig_off; jsg = jsc+jg_off; jeg = jec+jg_off
     call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
+    print *, 'here -5'
 
-    allocate(xg(imax, jmax), source=0.0)
-    allocate(yg(imax, jmax), source=0.0)
-    allocate(zg(imax, jmax), source=0.0)
+    ic=iec-isc+1; jc=jec-jsc+1
 
-    ic = iec-isc+3; jc = jec-jsc+3
-
-    allocate(xc(ic, jc), source=0.0)
-    allocate(yc(ic, jc), source=0.0)
-    allocate(zc(ic, jc), source=0.0)
-
-    do j = jsc-1, jec+1
-        do i = isc-1, iec+1
+    count = 0
+    allocate(sal_ct%two_d_to_1d(ied, jed), source=-1)
+    do j = jsc, jec ! count number of ocean points in computational domain
+        do i = isc, iec
             if (G%mask2dT(i, j) > 0.1) then
+                count = count + 1
+                sal_ct%two_d_to_1d(i, j) = count
+            endif
+        enddo
+    enddo
+    allocate(sal_ct%one_d_to_2d_i(count))
+    allocate(sal_ct%one_d_to_2d_j(count))
+    allocate(xc1d(count), source=0.0)
+    allocate(yc1d(count), source=0.0)
+    allocate(zc1d(count), source=0.0)
+    sal_ct%own_ocean_points = count
+
+    print *, 'here -4'
+
+    count = 0
+    do j = jsc, jec
+        do i = isc, iec
+            if (G%mask2dT(i, j) > 0.1) then
+                count = count + 1
                 lat = G%geoLatT(i, j) * pi/180.0
                 lon = G%geoLonT(i, j) * pi/180.0
                 colat = 0.5*pi-lat
                 x = sin(colat)*cos(lon)
                 y = sin(colat)*sin(lon)
                 z = cos(colat)
-                xc(i-isc+2, j-jsc+2) = x
-                yc(i-isc+2, j-jsc+2) = y
-                zc(i-isc+2, j-jsc+2) = z
-                ! xg(i+ig_off, j+jg_off) = x
-                ! yg(i+ig_off, j+jg_off) = y
-                ! zg(i+ig_off, j+jg_off) = z
-            else ! land point
-                xc(i-isc+2, j-jsc+2) = -2.0
-                yc(i-isc+2, j-jsc+2) = -2.0
-                zc(i-isc+2, j-jsc+2) = -2.0
-                ! xg(i+ig_off, j+jg_off) = -2.0
-                ! yg(i+ig_off, j+jg_off) = -2.0
-                ! zg(i+ig_off, j+jg_off) = -2.0
+
+                xc1d(count) = x
+                yc1d(count) = y
+                zc1d(count) = z
+                sal_ct%one_d_to_2d_i(sal_ct%two_d_to_1d(i, j)) = i
+                sal_ct%one_d_to_2d_i(sal_ct%two_d_to_1d(i, j)) = j
             end if
         enddo
     enddo
 
-    xg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = xc(2:ic-1, 2:jc-1)
-    yg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = yc(2:ic-1, 2:jc-1)
-    zg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = zc(2:ic-1, 2:jc-1)
+    print *, 'here -3'
 
-    call sum_across_PEs(xg, imax*jmax)
-    call sum_across_PEs(yg, imax*jmax)
-    call sum_across_PEs(zg, imax*jmax)
+    allocate(pcg(sal_ct%p), source=0)
+    allocate(indexsg(sal_ct%p), source=0)
+    allocate(indexeg(sal_ct%p), source=0)
+    pcg(sal_ct%id+1) = count
+
+    call sum_across_PEs(pcg, sal_ct%p)
+
+    print *, 'here -2'
+
+    indexsg(1) = 1
+    do i = 1, sal_ct%p-1
+        indexeg(i)=indexsg(i)-1+pcg(i)
+        indexsg(i+1)=indexeg(i)+1
+    enddo
+    indexeg(sal_ct%p) = indexsg(sal_ct%p)+pcg(sal_ct%p)-1
+
+    sal_ct%indexsg = indexsg
+    sal_ct%indexeg = indexeg
+    sal_ct%pcg = pcg
+
+    pointcount = 0
+    do i = 1, sal_ct%p
+        pointcount = pointcount + pcg(i)
+    enddo
+    sal_ct%total_ocean_points = pointcount
+
+    allocate(xg1d(pointcount), source=0.0)
+    allocate(yg1d(pointcount), source=0.0)
+    allocate(zg1d(pointcount), source=0.0)
+
+    print *, 'here -1'
+
+    ! xg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = xc(:,:)
+    ! yg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = yc(:,:)
+    ! zg(isc+ig_off:iec+ig_off, jsc+jg_off:jec+jg_off) = zc(:,:)
+
+    print *, indexsg(sal_ct%id+1), indexeg(sal_ct%id+1), size(xg1d), size(xc1d), pcg(1)
+
+    xg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = xc1d(:)
+    yg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = yc1d(:)
+    zg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = zc1d(:)
+
+    print *, 'here 0'
+
+    print *, size(xg), size(yg), size(zg)
+    call sum_across_PEs(xg1d, pointcount)
+    call sum_across_PEs(yg1d, pointcount)
+    call sum_across_PEs(zg1d, pointcount)
+    ! do i = 1, size(xg1d)
+    !     print *, xg1d(i), yg1d(i), zg1d(i)
+    ! enddo
     ! xg/yg/zg is now a copy of all the points from all the processors
     print *, sal_ct%id, 'here 1'
-    call tree_traversal(G, sal_ct%tree_struct, xg, yg, zg, 10) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 10, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
     print *, sal_ct%id, 'here 2'
 
-    allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
+    ! allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
+    allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
     ! finds which panels contain the computational domain points
-    call assign_points_to_panels(G, sal_ct%tree_struct, xc, yc, zc, sal_ct%points_panels, max_level) 
+    call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level) 
     print *, sal_ct%id, 'here 3'
 
-    ! compute the interaction lists for the target points in the computational domain
-    call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc, yc, zc, 0.7)
+    ! compute the interaction lists for the target points in the target domain
+    call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
+                                    0.7, sal_ct%own_ocean_points)
     print *, sal_ct%id, 'here 4'
 
     ! compute communication patterns 
-    call calculate_communications(sal_ct, xg, yg, zg, G)
+    call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
     print *, sal_ct%id, 'here 5'
     ! print *, 'test'
 
@@ -848,7 +1243,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     type(ocean_grid_type), intent(in) :: G
     real, intent(in) :: eta(:,:)
     real, intent(inout) :: e_ssh(:)
-    integer :: max_give, max_get, p, id, i, j, i_s, j_s, i_off, j_off, count
+    integer :: max_give, max_get, p, id, i, j, i_s, j_s, i_off, j_off, count, index
     real, allocatable :: points_to_give(:,:,:), points_received(:,:,:)
     real :: area, rad2
     ! integer, allocatable :: pelist(:)
@@ -868,11 +1263,15 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     do i = 1, p
         do j = 1, max_give
-            i_s = sal_ct%points_to_give_i(j, i)
-            j_s = sal_ct%points_to_give_j(j, i)
-            if ((i_s .ne. -1) .and. (j_s .ne. -1)) then
-                area = G%areaT(i_s-i_off, j_s-j_off)/rad2
-                points_to_give(1, j, i) = eta(i_s-i_off, j_s-j_off)*area
+            ! i_s = sal_ct%points_to_give_i(j, i)
+            ! j_s = sal_ct%points_to_give_j(j, i)
+            index = sal_ct%points_to_give(j, i)
+            ! if ((i_s .ne. -1) .and. (j_s .ne. -1)) then
+            if (index .ne. -1) then
+                i_s = sal_ct%one_d_to_2d_i(index)
+                j_s = sal_ct%one_d_to_2d_j(index)
+                area = G%areaT(i_s, j_s)/rad2
+                points_to_give(1, j, i) = eta(i_s, j_s)*area
             end if
         enddo
     enddo
@@ -1014,7 +1413,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
     type(ocean_grid_type), intent(in) :: G
-    integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m, ic, jc
+    integer :: isc, iec, jsc, jec, i, j, max_levels, k, i_t, shift, offset, l, m, ic, jc, ii, ij
     real :: x, y, z, a, ssh, lat, lon, colat, pi, r2, min_xi, max_xi, min_eta, max_eta, xi, eta
     real, allocatable:: basis_vals(:,:), proxy_source_weights_sep(:,:,:)
     integer, allocatable :: points_in_panel(:), pos_in_array(:)
@@ -1024,94 +1423,103 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     ic = iec-isc+1; jc = jec-jsc+1
     r2 = G%Rad_Earth ** 2
-    
-    if (sal_ct%reprod_sum) then
-        allocate(points_in_panel(6), source=0)
-        do j = 1, jc
-            do i = 1, ic
-                k = sal_ct%points_panels(1, i, j)
-                points_in_panel(k) = points_in_panel(k) + 1
-            enddo
-        enddo
-        l = 0
-        do i = 1, 6
-            l = max(l, points_in_panel(i))
-        enddo
-        allocate(proxy_source_weights_sep(1, l, size(proxy_source_weights)), source=0.0)
-        allocate(pos_in_array(size(proxy_source_weights)), source=0)
-        do j = 1, jc
-            do i = 1, ic
-                lat = G%geoLatT(i+isc-1, j+jsc-1)*pi/180.0
-                lon = G%geoLonT(i+isc-1, j+jsc-1)*pi/180.0
-                colat = 0.5*pi-lat
-                x = sin(colat)*cos(lon)
-                y = sin(colat)*sin(lon)
-                z = cos(colat)
-                a = G%areaT(i+isc-1, j+jsc-1)/r2
-                ssh = sshs(i+isc-1, j+jsc-1)
-                panelloop1: do k = 1, size(sal_ct%points_panels(:,i,j))
-                    i_t = sal_ct%points_panels(k,i,j)
-                    if (i_t == -1) then
-                        exit panelloop1
-                    else 
-                        shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                        min_xi = sal_ct%tree_struct(i_t)%min_xi
-                        max_xi = sal_ct%tree_struct(i_t)%max_xi
-                        min_eta = sal_ct%tree_struct(i_t)%min_eta
-                        max_eta = sal_ct%tree_struct(i_t)%max_eta
-                        call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
-                        call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
-                        offset = 0
-                        do l = 1, sal_ct%interp_degree+1
-                            do m = 1, sal_ct%interp_degree+1
-                                offset=offset+1
-                                pos_in_array(shift+offset) = pos_in_array(shift+offset)+1
-                                proxy_source_weights_sep(1, pos_in_array(shift+offset), shift+offset)=basis_vals(m,l)*ssh*a
-                            enddo
-                        enddo
-                    end if
-                enddo panelloop1
-            enddo
-        enddo
-        j = size(proxy_source_weights)
-        sum_tot = reproducing_sum(proxy_source_weights_sep(:,:,1:j), sums=proxy_source_weights(1:j))
-    else 
-        do j = 1, jc
-            do i = 1, ic
-                lat = G%geoLatT(i+isc-1, j+jsc-1)*pi/180.0
-                lon = G%geoLonT(i+isc-1, j+jsc-1)*pi/180.0
-                colat = 0.5*pi-lat
-                x = sin(colat)*cos(lon)
-                y = sin(colat)*sin(lon)
-                z = cos(colat)
-                a = G%areaT(i+isc-1, j+jsc-1)/r2
-                ssh = sshs(i+isc-1, j+jsc-1)
-                panelloop2: do k = 1, size(sal_ct%points_panels(:,i,j))
-                    i_t = sal_ct%points_panels(k,i,j)
-                    if (i_t == -1) then
-                        exit panelloop2
-                    else 
-                        shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                        min_xi = sal_ct%tree_struct(i_t)%min_xi
-                        max_xi = sal_ct%tree_struct(i_t)%max_xi
-                        min_eta = sal_ct%tree_struct(i_t)%min_eta
-                        max_eta = sal_ct%tree_struct(i_t)%max_eta
-                        call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
-                        call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
-                        offset = 0
-                        do l = 1, sal_ct%interp_degree+1
-                            do m = 1, sal_ct%interp_degree+1
-                                offset=offset+1
-                                proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(m, l)*ssh*a
-                            enddo
-                        enddo
-                    end if
-                enddo panelloop2
-            enddo
-        enddo
 
-        call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
-    end if
+    print *, 'psc 1'
+    
+    ! if (sal_ct%reprod_sum) then
+    !     allocate(points_in_panel(6), source=0)
+    !     do j = 1, jc
+    !         do i = 1, ic
+    !             k = sal_ct%points_panels(1, i, j)
+    !             points_in_panel(k) = points_in_panel(k) + 1
+    !         enddo
+    !     enddo
+    !     l = 0
+    !     do i = 1, 6
+    !         l = max(l, points_in_panel(i))
+    !     enddo
+    !     allocate(proxy_source_weights_sep(1, l, size(proxy_source_weights)), source=0.0)
+    !     allocate(pos_in_array(size(proxy_source_weights)), source=0)
+    !     do j = 1, jc
+    !         do i = 1, ic
+    !             lat = G%geoLatT(i+isc-1, j+jsc-1)*pi/180.0
+    !             lon = G%geoLonT(i+isc-1, j+jsc-1)*pi/180.0
+    !             colat = 0.5*pi-lat
+    !             x = sin(colat)*cos(lon)
+    !             y = sin(colat)*sin(lon)
+    !             z = cos(colat)
+    !             a = G%areaT(i+isc-1, j+jsc-1)/r2
+    !             ssh = sshs(i+isc-1, j+jsc-1)
+    !             panelloop1: do k = 1, size(sal_ct%points_panels(:,i,j))
+    !                 i_t = sal_ct%points_panels(k,i,j)
+    !                 if (i_t == -1) then
+    !                     exit panelloop1
+    !                 else 
+    !                     shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+    !                     min_xi = sal_ct%tree_struct(i_t)%min_xi
+    !                     max_xi = sal_ct%tree_struct(i_t)%max_xi
+    !                     min_eta = sal_ct%tree_struct(i_t)%min_eta
+    !                     max_eta = sal_ct%tree_struct(i_t)%max_eta
+    !                     call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
+    !                     call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
+    !                     offset = 0
+    !                     do l = 1, sal_ct%interp_degree+1
+    !                         do m = 1, sal_ct%interp_degree+1
+    !                             offset=offset+1
+    !                             pos_in_array(shift+offset) = pos_in_array(shift+offset)+1
+    !                             proxy_source_weights_sep(1, pos_in_array(shift+offset), shift+offset)=basis_vals(m,l)*ssh*a
+    !                         enddo
+    !                     enddo
+    !                 end if
+    !             enddo panelloop1
+    !         enddo
+    !     enddo
+    !     j = size(proxy_source_weights)
+    !     sum_tot = reproducing_sum(proxy_source_weights_sep(:,:,1:j), sums=proxy_source_weights(1:j))
+    ! else 
+    print *, 'psc 2'
+    ! do j = 1, jc
+    !     do i = 1, ic
+    do i = 1, sal_ct%own_ocean_points
+        ii = sal_ct%one_d_to_2d_i(i)
+        ij = sal_ct%one_d_to_2d_j(i)
+        lat = G%geoLatT(ii, ij)*pi/180.0
+        lon = G%geoLonT(ii, ij)*pi/180.0
+        colat = 0.5*pi-lat
+        x = sin(colat)*cos(lon)
+        y = sin(colat)*sin(lon)
+        z = cos(colat)
+        a = G%areaT(ii, ij)/r2
+        ssh = sshs(ii, ij)
+        ! panelloop2: do k = 1, size(sal_ct%points_panels(:,i,j))
+        panelloop2: do k = 1, size(sal_ct%points_panels(:,i))
+            ! i_t = sal_ct%points_panels(k,i,j)
+            i_t = sal_ct%points_panels(k, i)
+            if (i_t == -1) then
+                exit panelloop2
+            else 
+                shift = (i_t-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+                min_xi = sal_ct%tree_struct(i_t)%min_xi
+                max_xi = sal_ct%tree_struct(i_t)%max_xi
+                min_eta = sal_ct%tree_struct(i_t)%min_eta
+                max_eta = sal_ct%tree_struct(i_t)%max_eta
+                call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(i_t)%face)
+                call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
+                offset = 0
+                do l = 1, sal_ct%interp_degree+1
+                    do m = 1, sal_ct%interp_degree+1
+                        offset=offset+1
+                        proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(m, l)*ssh*a
+                    enddo
+                enddo
+            end if
+        enddo panelloop2
+    !     enddo
+    enddo
+    print *, 'psc 3'
+
+    call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
+    ! end if
 end subroutine proxy_source_compute
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
@@ -1119,9 +1527,10 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9/4.0 ! modify this
+    ! cons = -7.029770573725803e-9/10.0 ! modify this
+    cons = 0.0
     cons1 = 0.0447867/1.0 ! modify this
-    eps=1e-8
+    eps=1e-4
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1146,19 +1555,23 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
     type(ocean_grid_type), intent(in) :: G
     real, intent(in) :: proxy_source_weights(:)
     real, intent(inout) :: sal_x(:,:), sal_y(:,:), sal(:,:)
-    integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset
+    integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset, i_t, isc, jsc
     real, allocatable :: source_proxy_weights(:), cheb_xi(:), cheb_eta(:)
     real :: min_xi, max_xi, min_eta, max_eta, x, y, z, lat, lon, xi, eta, colat, pi
     real :: cx, cy, cz, sal_grad_x, sal_grad_y, sal_val
 
     pi = 4.0*DATAN(1.0)
+    isc = G%isc; jsc = G%jsc
 
     proxy_count = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
     allocate(source_proxy_weights(proxy_count), source=0.0)
     do i = 1, size(sal_ct%pc_interactions)
         i_s = sal_ct%pc_interactions(i)%index_source
-        i_ti = sal_ct%pc_interactions(i)%index_target_i
-        i_tj = sal_ct%pc_interactions(i)%index_target_j
+        ! i_ti = sal_ct%pc_interactions(i)%index_target_i
+        ! i_tj = sal_ct%pc_interactions(i)%index_target_j
+        i_t = sal_ct%pc_interactions(i)%index_target
+        i_ti = sal_ct%one_d_to_2d_i(i_t)
+        i_tj = sal_ct%one_d_to_2d_j(i_t)
         source_proxy_weights = proxy_source_weights(proxy_count*(i_s-1)+1:proxy_count*i_s)
         min_xi = sal_ct%tree_struct(i_s)%min_xi
         max_xi = sal_ct%tree_struct(i_s)%max_xi
@@ -1192,16 +1605,18 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     type(ocean_grid_type), intent(in) :: G
     real, intent(inout) :: sal_x(:,:), sal_y(:,:), sal(:,:)
     real, intent(in) :: e_ssh(:), eta(:,:)
-    integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj
+    integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, isc, jsc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
+    isc = G%isc; jsc = G%jsc
 
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
-        i_ti = sal_ct%pp_interactions(i)%index_target_i
-        i_tj = sal_ct%pp_interactions(i)%index_target_j
+        i_t = sal_ct%pp_interactions(i)%index_target
+        i_ti = sal_ct%one_d_to_2d_i(i_t)
+        i_tj = sal_ct%one_d_to_2d_j(i_t)
         lat = G%geoLatT(i_ti, i_tj)*pi/180.0
         lon = G%geoLonT(i_ti, i_tj)*pi/180.0
         colat = 0.5*pi-lat
@@ -1209,14 +1624,18 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
         y = sin(colat)*sin(lon)
         z = cos(colat)
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
-            i_si = sal_ct%tree_struct(i_s)%relabeled_points_inside_i(j)
-            i_sj = sal_ct%tree_struct(i_s)%relabeled_points_inside_j(j)
-            if (i_sj == -1) then ! unowned source point
-                sx = sal_ct%e_xs(i_si)
-                sy = sal_ct%e_ys(i_si)
-                sz = sal_ct%e_zs(i_si)
-                ssh = e_ssh(i_si)
+            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+            ! i_si = sal_ct%tree_struct(i_s)%relabeled_points_inside_i(j)
+            ! i_sj = sal_ct%tree_struct(i_s)%relabeled_points_inside_j(j)
+            ! if (i_sj == -1) then ! unowned source point
+            if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
+                sx = sal_ct%e_xs(i_si-sal_ct%own_ocean_points)
+                sy = sal_ct%e_ys(i_si-sal_ct%own_ocean_points)
+                sz = sal_ct%e_zs(i_si-sal_ct%own_ocean_points)
+                ssh = e_ssh(i_sp)
             else
+                i_si = sal_ct%one_d_to_2d_i(i_sp)
+                i_sj = sal_ct%one_d_to_2d_j(i_sp)
                 lat = G%geoLatT(i_si, i_sj)
                 lon = G%geoLonT(i_si, i_sj)
                 colat = 0.5*pi-lat
@@ -1243,20 +1662,34 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
 
     call cpu_clock_begin(id_clock_SAL)
 
+    sal_x = 0.0
+    sal_y = 0.0
+
+    print *, 'ssh communication'
+
     ! do SSH communication needed for PP interactions
     allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
     call ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
-    ! compute proxy source weights
+    print *, 'proxy source compute'
+
+    ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
     call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
-    ! compute PC interactions
+    print *, 'pc interaction'
+
+    ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
 
-    ! compute PP interactions
+    print *, 'pp interaction'
+
+    ! compute PP interactions for target domain
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+
+    call pass_var(sal_x, G%domain) ! halo update 
+    call pass_var(sal_y, G%domain) ! halo update 
 
     call cpu_clock_end(id_clock_SAL)
 end subroutine sal_conv_eval

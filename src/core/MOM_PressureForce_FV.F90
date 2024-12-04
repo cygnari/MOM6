@@ -173,6 +173,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
 !  real :: oneatm       ! 1 standard atmosphere of pressure in [R L2 T-2 ~> Pa]
   real, parameter :: C1_6 = 1.0/6.0  ! [nondim]
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, nkmb, isd, ied, jsd, jed
+  integer :: isdb, iedb, jsdb, jedb
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, k
 
@@ -180,6 +181,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
   nkmb=GV%nk_rho_varies
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
+  isdb = G%IsdB; iedb = G%Iedb; jsdb = G%JsdB; jedb = G%JedB
   EOSdom(1) = Isq - (G%isd-1) ;  EOSdom(2) = G%iec+1 - (G%isd-1)
 
   if (.not.CS%initialized) call MOM_error(FATAL, &
@@ -200,25 +202,29 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   I_gEarth = 1.0 / GV%g_Earth
 
   print *, 'here 1'
+  print *, 'non bouss'
 
   if (use_p_atm) then
     !$OMP parallel do default(shared)
-    ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    do j = jsd,jed; do i=isd,ied
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    ! do j = jsd,jed; do i=isd,ied
+    ! do j = jsdb, jedb; do i = isdb, iedb
       p(i,j,1) = p_atm(i,j)
     enddo ; enddo
   else
     ! oneatm = 101325.0 * US%Pa_to_RL2_T2 ! 1 atm scaled to [R L2 T-2 ~> Pa]
     !$OMP parallel do default(shared)
-    ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    do j = jsd,jed; do i=isd,ied
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    ! do j = jsd,jed; do i=isd,ied
+    ! do j = jsdb, jedb; do i = isdb, iedb
       p(i,j,1) = 0.0 ! or oneatm
     enddo ; enddo
   endif
   print *, 'here 2'
   !$OMP parallel do default(shared)
-  ! do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
-  do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
+  do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
+  ! do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
+  ! do j = jsdb, jedb; do k = 2,nz+1; do i = isdb, iedb
     p(i,j,K) = p(i,j,K-1) + H_to_RL2_T2 * h(i,j,k-1)
   enddo ; enddo ; enddo
   print *, 'here 3'
@@ -233,16 +239,13 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       tv_tmp%eqn_of_state => tv%eqn_of_state
       do i=Isq,Ieq+1 ; p_ref(i) = tv%P_Ref ; enddo
       !$OMP parallel do default(shared) private(Rho_cv_BL)
-      ! do j=Jsq,Jeq+1
-      do j = jsd, jed
-        ! do k=1,nkmb ; do i=Isq,Ieq+1
-        do k = 1, nkmb; do i = isd, ied
+      do j=Jsq,Jeq+1
+        do k=1,nkmb ; do i=Isq,Ieq+1
           tv_tmp%T(i,j,k) = tv%T(i,j,k) ; tv_tmp%S(i,j,k) = tv%S(i,j,k)
         enddo ; enddo
         call calculate_density(tv%T(:,j,nkmb), tv%S(:,j,nkmb), p_ref, Rho_cv_BL(:), &
                                tv%eqn_of_state, EOSdom)
-        ! do k=nkmb+1,nz ; do i=Isq,Ieq+1
-        do k = nkmb+1, nz ; do i = isd, ied
+        do k=nkmb+1,nz ; do i=Isq,Ieq+1
           if (GV%Rlay(k) < Rho_cv_BL(i)) then
             tv_tmp%T(i,j,k) = tv%T(i,j,nkmb) ; tv_tmp%S(i,j,k) = tv%S(i,j,nkmb)
           else
@@ -298,18 +301,21 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       endif
     else
       alpha_anom = 1.0 / GV%Rlay(k) - alpha_ref
-      ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      do j = jsd,jed; do i = isd,ied
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      ! do j = jsd,jed; do i = isd,ied
+      ! do j = jsdb, jedb; do i = isdb, iedb
         dp(i,j) = H_to_RL2_T2 * h(i,j,k)
         dza(i,j,k) = alpha_anom * dp(i,j)
         intp_dza(i,j,k) = 0.5 * alpha_anom * dp(i,j)**2
       enddo ; enddo
-      ! do j=js,je ; do I=Isq,Ieq
-      do j = jsd,jed; do i = isd,ied
+      do j=js,je ; do I=Isq,Ieq
+      ! do j = jsd,jed; do i = isd,ied
+      ! do j = jsdb, jedb; do i = isdb, iedb
         intx_dza(i,j,k) = 0.5 * alpha_anom * (dp(i,j)+dp(i+1,j))
       enddo ; enddo
-      ! do J=Jsq,Jeq ; do i=is,ie
-      do j = jsd,jed; do i = isd,ied
+      do J=Jsq,Jeq ; do i=is,ie
+      ! do j = jsd,jed; do i = isd,ied
+      ! do j = jsdb, jedb; do i = isdb, iedb
         inty_dza(i,j,k) = 0.5 * alpha_anom * (dp(i,j)+dp(i,j+1))
       enddo ; enddo
     endif
@@ -325,13 +331,16 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
 
   ! Sum vertically to determine the surface geopotential anomaly.
   !$OMP parallel do default(shared)
-  ! do j=Jsq,Jeq+1
-  do j = jsd,jed
-    ! do i=Isq,Ieq+1
-    do i = isd,ied
+  do j=Jsq,Jeq+1
+  ! do j = jsd,jed
+  ! do j = jsdb, jedb
+    do i=Isq,Ieq+1
+    ! do i = isd,ied
+    ! do i=isdb, iedb
       za(i,j) = alpha_ref*p(i,j,nz+1) - GV%g_Earth*G%bathyT(i,j)
     enddo
     do k=nz,1,-1 ; do i=Isq,Ieq+1
+    ! do k=nz,1,-1; do i=isdb, iedb
       za(i,j) = za(i,j) + dza(i,j,k)
     enddo ; enddo
   enddo
@@ -341,8 +350,9 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   if (CS%calculate_SAL) then
     print *, 'here 1'
     !$OMP parallel do default(shared)
-    ! do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    do j=jsd,jed; do i = isd,ied
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    ! do j=jsd,jed; do i = isd,ied
+    ! do j=jsdb, jedb; do i=isdb, iedb
       SSH(i,j) = (za(i,j) - alpha_ref*p(i,j,1)) * I_gEarth - G%Z_ref &
                  - max(-G%bathyT(i,j)-G%Z_ref, 0.0)
     enddo ; enddo
@@ -434,7 +444,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                       (za(i+1,j)*dp(i+1,j) + intp_dza(i+1,j,k))) + &
                      ((dp(i+1,j) - dp(i,j)) * intx_za(I,j) - &
                       (p(i+1,j,K) - p(i,j,K)) * intx_dza(I,j,k)) ) * &
-                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect))+0.5*(e_sal_x(i,j)+e_sal_x(i-1,j))
+                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect)) ! +0.5*(e_sal_x(i+1,j)+e_sal_x(i,j))
     enddo ; enddo
     !$OMP parallel do default(shared)
     do J=Jsq,Jeq ; do i=is,ie ! y derivative
@@ -443,7 +453,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                      (za(i,j+1)*dp(i,j+1) + intp_dza(i,j+1,k))) + &
                     ((dp(i,j+1) - dp(i,j)) * inty_za(i,J) - &
                      (p(i,j+1,K) - p(i,j,K)) * inty_dza(i,J,k))) * &
-                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect))+0.5*(e_sal_y(i,j)+e_sal_y(i,j-1))
+                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect)) ! +0.5*(e_sal_y(i,j+1)+e_sal_y(i,j))
     enddo ; enddo
 
     if (CS%GFS_scale < 1.0) then
