@@ -1263,7 +1263,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
 
     ! do SSH communication needed for PP interactions
     allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
-    call ssh_pp_communications(sal_ct, G, eta, e_ssh)
+    ! call ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     print *, 'proxy source compute'
 
@@ -1280,7 +1280,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     print *, 'pp interaction'
 
     ! compute PP interactions for target domain
-    call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+    ! call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
 
     call pass_var(sal_x, G%domain) ! halo update 
     call pass_var(sal_y, G%domain) ! halo update 

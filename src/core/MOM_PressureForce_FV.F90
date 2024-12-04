@@ -140,7 +140,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     e_sal_x, &  ! e_sal x gradient component [V ~> m s-1]
     e_sal_y     ! e_sal y gradient component [V ~> m s-1]
 
-
   real, dimension(SZI_(G)) :: Rho_cv_BL !  The coordinate potential density in the deepest variable
                 ! density near-surface layer [R ~> kg m-3].
   real, dimension(SZIB_(G),SZJ_(G)) :: &
