@@ -3,6 +3,7 @@ module MOM_PressureForce_FV
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
+use MOM_debugging, only : hchksum
 use MOM_diag_mediator, only : post_data, register_diag_field
 use MOM_diag_mediator, only : safe_alloc_ptr, diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
@@ -69,6 +70,8 @@ type, public :: PressureForce_FV_CS ; private
   integer :: id_e_tide_eq = -1 !< Diagnostic identifier
   integer :: id_e_tide_sal = -1 !< Diagnostic identifier
   integer :: id_e_sal = -1 !< Diagnostic identifier
+  integer :: id_e_sal_x = - 1 !< Diagnostic identifier
+  integer :: id_e_sal_y = - 1 !< Diagnostic identifier
   integer :: id_rho_pgf = -1 !< Diagnostic identifier
   integer :: id_rho_stanley_pgf = -1 !< Diagnostic identifier
   integer :: id_p_stanley = -1 !< Diagnostic identifier
@@ -201,33 +204,47 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   alpha_ref = 1.0 / CS%Rho0
   I_gEarth = 1.0 / GV%g_Earth
 
-  print *, 'here 1'
   print *, 'non bouss'
 
+  ! if (use_p_atm) then
+  !   !$OMP parallel do default(shared)
+  !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+  !   ! do j = jsd,jed; do i=isd,ied
+  !   ! do j = jsdb, jedb; do i = isdb, iedb
+  !     p(i,j,1) = p_atm(i,j)
+  !   enddo ; enddo
+  ! else
+  !   ! oneatm = 101325.0 * US%Pa_to_RL2_T2 ! 1 atm scaled to [R L2 T-2 ~> Pa]
+  !   !$OMP parallel do default(shared)
+  !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+  !   ! do j = jsd,jed; do i=isd,ied
+  !   ! do j = jsdb, jedb; do i = isdb, iedb
+  !     p(i,j,1) = 0.0 ! or oneatm
+  !   enddo ; enddo
+  ! endif
+
+  ! !$OMP parallel do default(shared)
+  ! do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
+  ! ! do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
+  ! ! do j = jsdb, jedb; do k = 2,nz+1; do i = isdb, iedb
+  !   p(i,j,K) = p(i,j,K-1) + H_to_RL2_T2 * h(i,j,k-1)
+  ! enddo ; enddo ; enddo
   if (use_p_atm) then
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    ! do j = jsd,jed; do i=isd,ied
-    ! do j = jsdb, jedb; do i = isdb, iedb
       p(i,j,1) = p_atm(i,j)
     enddo ; enddo
   else
     ! oneatm = 101325.0 * US%Pa_to_RL2_T2 ! 1 atm scaled to [R L2 T-2 ~> Pa]
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    ! do j = jsd,jed; do i=isd,ied
-    ! do j = jsdb, jedb; do i = isdb, iedb
       p(i,j,1) = 0.0 ! or oneatm
     enddo ; enddo
   endif
-  print *, 'here 2'
   !$OMP parallel do default(shared)
   do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
-  ! do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
-  ! do j = jsdb, jedb; do k = 2,nz+1; do i = isdb, iedb
     p(i,j,K) = p(i,j,K-1) + H_to_RL2_T2 * h(i,j,k-1)
   enddo ; enddo ; enddo
-  print *, 'here 3'
 
   if (use_EOS) then
   !   With a bulk mixed layer, replace the T & S of any layers that are
@@ -258,7 +275,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       tv_tmp%eqn_of_state => tv%eqn_of_state
     endif
   endif
-  print *, 'here 4'
 
   ! If regridding is activated, do a linear reconstruction of salinity
   ! and temperature across each layer. The subscripts 't' and 'b' refer
@@ -271,7 +287,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       call TS_PPM_edge_values(ALE_CSp, S_t, S_b, T_t, T_b, G, GV, tv, h, CS%boundary_extrap)
     endif
   endif
-  print *, 'here 5'
 
   !$OMP parallel do default(shared) private(alpha_anom,dp)
   do k=1,nz
@@ -302,25 +317,18 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     else
       alpha_anom = 1.0 / GV%Rlay(k) - alpha_ref
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      ! do j = jsd,jed; do i = isd,ied
-      ! do j = jsdb, jedb; do i = isdb, iedb
         dp(i,j) = H_to_RL2_T2 * h(i,j,k)
         dza(i,j,k) = alpha_anom * dp(i,j)
         intp_dza(i,j,k) = 0.5 * alpha_anom * dp(i,j)**2
       enddo ; enddo
       do j=js,je ; do I=Isq,Ieq
-      ! do j = jsd,jed; do i = isd,ied
-      ! do j = jsdb, jedb; do i = isdb, iedb
         intx_dza(i,j,k) = 0.5 * alpha_anom * (dp(i,j)+dp(i+1,j))
       enddo ; enddo
       do J=Jsq,Jeq ; do i=is,ie
-      ! do j = jsd,jed; do i = isd,ied
-      ! do j = jsdb, jedb; do i = isdb, iedb
         inty_dza(i,j,k) = 0.5 * alpha_anom * (dp(i,j)+dp(i,j+1))
       enddo ; enddo
     endif
   enddo
-  print *, 'here 6'
 
   !   The bottom geopotential anomaly is calculated first so that the increments
   ! to the geopotential anomalies can be reused.  Alternately, the surface
@@ -332,23 +340,16 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   ! Sum vertically to determine the surface geopotential anomaly.
   !$OMP parallel do default(shared)
   do j=Jsq,Jeq+1
-  ! do j = jsd,jed
-  ! do j = jsdb, jedb
     do i=Isq,Ieq+1
-    ! do i = isd,ied
-    ! do i=isdb, iedb
       za(i,j) = alpha_ref*p(i,j,nz+1) - GV%g_Earth*G%bathyT(i,j)
     enddo
     do k=nz,1,-1 ; do i=Isq,Ieq+1
-    ! do k=nz,1,-1; do i=isdb, iedb
       za(i,j) = za(i,j) + dza(i,j,k)
     enddo ; enddo
   enddo
-  print *, 'here 7'
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
   if (CS%calculate_SAL) then
-    print *, 'here 1'
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
     ! do j=jsd,jed; do i = isd,ied
@@ -366,6 +367,10 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       e_sal_y(i, j) = e_sal_y(i, j)*GV%g_Earth
       e_sal(i, j) = e_sal(i, j)*GV%g_Earth
     enddo ; enddo
+
+    call hchksum(e_sal_x, "SAL x derivative", G%HI, haloshift=1)
+    call hchksum(e_sal_y, "SAL y derivative", G%HI, haloshift=1)
+    call hchksum(e_sal, "SAL potential", G%HI, haloshift=1)
 
     ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
     !   !$OMP parallel do default(shared)
@@ -444,7 +449,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                       (za(i+1,j)*dp(i+1,j) + intp_dza(i+1,j,k))) + &
                      ((dp(i+1,j) - dp(i,j)) * intx_za(I,j) - &
                       (p(i+1,j,K) - p(i,j,K)) * intx_dza(I,j,k)) ) * &
-                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect)) ! +0.5*(e_sal_x(i+1,j)+e_sal_x(i,j))
+                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect)) +0.5*(e_sal_x(i+1,j)+e_sal_x(i,j))
     enddo ; enddo
     !$OMP parallel do default(shared)
     do J=Jsq,Jeq ; do i=is,ie ! y derivative
@@ -453,7 +458,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                      (za(i,j+1)*dp(i,j+1) + intp_dza(i,j+1,k))) + &
                     ((dp(i,j+1) - dp(i,j)) * inty_za(i,J) - &
                      (p(i,j+1,K) - p(i,j,K)) * inty_dza(i,J,k))) * &
-                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect)) ! +0.5*(e_sal_y(i,j+1)+e_sal_y(i,j))
+                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect)) +0.5*(e_sal_y(i,j+1)+e_sal_y(i,j))
     enddo ; enddo
 
     if (CS%GFS_scale < 1.0) then
@@ -494,6 +499,8 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   if (CS%id_e_sal>0) call post_data(CS%id_e_sal, e_sal, CS%diag)
   if (CS%id_e_tide_eq>0) call post_data(CS%id_e_tide_eq, e_tide_eq, CS%diag)
   if (CS%id_e_tide_sal>0) call post_data(CS%id_e_tide_sal, e_tide_sal, CS%diag)
+  if (CS%id_e_sal_x>0) call post_data(CS%id_e_sal_x, e_sal_x, CS%diag)
+  if (CS%id_e_sal_x>0) call post_data(CS%id_e_sal_y, e_sal_y, CS%diag)
 
 end subroutine PressureForce_FV_nonBouss
 
@@ -1081,6 +1088,10 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
         'Equilibrium tides height anomaly', 'meter', conversion=US%Z_to_m)
     CS%id_e_tide_sal = register_diag_field('ocean_model', 'e_tide_sal', diag%axesT1, Time, &
         'Read-in tidal self-attraction and loading height anomaly', 'meter', conversion=US%Z_to_m)
+    CS%id_e_sal_x = register_diag_field('ocean_model', 'e_sal_x', diag%axest1, Time, &
+        'SAL x derivative', 'meter', conversion=US%Z_to_m)
+    CS%id_e_sal_y = register_diag_field('ocean_model', 'e_sal_y', diag%axest1, Time, &
+        'SAL y derivative', 'meter', conversion=US%Z_to_m)
   endif
   print *, 'here 0 0 3'
 
