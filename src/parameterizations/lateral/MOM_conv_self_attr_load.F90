@@ -106,7 +106,8 @@ integer function face_from_xyz(x, y, z)
         else
         face = 4
         end if
-    else if ((az >= ax) .and. (az >= ay)) then
+    ! else if ((az >= ax) .and. (az >= ay)) then
+    else
         if (z >= 0) then
         face = 5
         else
@@ -218,8 +219,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
 
-    print *, 'here 0 0 1'
-
     ! initialize the six top level cube panels
     do i = 1, 6
         tree_panels_temp(i)%id = i
@@ -235,8 +234,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         curr_loc(i) = 0
     enddo
 
-    print *, 'here 0 0 2'
-
     do i = 1, point_count
         xval = xg(i)
         yval = yg(i)
@@ -247,8 +244,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels_temp(face)%points_inside(curr_loc(face)) = i
     enddo
 
-    print *, 'here 0 0 3'
-
     do i = 1, 6
         allocate(temp(curr_loc(i)))
         do j = 1, tree_panels_temp(i)%panel_point_count
@@ -257,8 +252,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         call move_alloc(from=temp, to=tree_panels_temp(i)%points_inside)
         curr_loc(i) = 0
     enddo
-
-    print *, 'here 0 0 4'
 
     i = 1
     panel_count = 6
@@ -382,9 +375,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
     END DO
-
-    print *, 'here 0 0 6'
-
 end subroutine tree_traversal
 
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
@@ -402,7 +392,6 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     ic = iec-isc+1; jc = jec-jsc+1
 
-    print *, 'here 0 2 0'
     DO i = 1, size(x)
         level = 1
         j = 1
@@ -437,12 +426,15 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     allocate(source_index(size(tree_panels)))
-    allocate(interaction_lists_temp(100*point_count))
+    allocate(interaction_lists_temp(150*point_count))
 
     interaction_count = 0
     pp_count = 0
     pc_count = 0
 
+    id = PE_here()
+
+    print *, 'here x', id, point_count, size(x), size(y), size(z)
     do i = 1, point_count
         tt_count = 6
         do k = 1, 6
@@ -452,14 +444,17 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
         xco = x(i)
         yco = y(i)
         zco = z(i)
+        ! print *, i, interaction_count, size(interaction_lists_temp)
         panelloop: do while (curr_loc <= tt_count) ! go through source panels
             i_s = source_index(curr_loc)
             c_s = tree_panels(i_s)%panel_point_count
+            ! print *, curr_loc, tt_count
             if (c_s > 0) then ! cluster has points
-                call xyz_from_xieta(xco, yco, zco, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
-                dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0_8), 1.0_8))
+                call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
+                dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0), 1.0))
                 separation = tree_panels(i_s)%radius/dist
-                if ((dist > 0) .and. (separation < theta)) then ! well separated, do pc interaction
+                ! if ((dist > 0) .and. (separation < theta).and. (.not. tree_panels(i_s)%contains_point(xco, yco, zco))) then ! well separated, do pc interaction
+                if ((dist > 0) .and. (separation < theta)) then
                     interaction_count = interaction_count + 1
                     pc_count = pc_count + 1
                     interaction_lists_temp(interaction_count)%index_target = i
@@ -487,6 +482,7 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
 
     allocate(pc_interactions(pc_count))
     allocate(pp_interactions(pp_count))
+    print *, pc_count, pp_count
 
     k = 0
     l = 0
@@ -881,7 +877,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
 
-    sal_ct%interp_degree=1
+    sal_ct%interp_degree=3
 end subroutine sal_conv_init
 
 subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
@@ -1012,19 +1008,19 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
 
     ! first check if xi/eta are an interpolation point
     do i = 1, degree+1
-        if (ABS(xi - bli_xi_vals(i)) < 1.0e-16_8) then
+        if (ABS(xi - bli_xi_vals(i)) < 1.0e-16) then
             found_xi = .true.
-            xi_func_vals(i) = 1.0_8
+            xi_func_vals(i) = 1.0
         end if
-        if (ABS(eta - bli_eta_vals(i)) < 1.0e-16_8) then
+        if (ABS(eta - bli_eta_vals(i)) < 1.0e-16) then
             found_eta = .true.
-            eta_func_vals(i) = 1.0_8
+            eta_func_vals(i) = 1.0
         end if
     enddo
 
     ! xi/eta are not interpolation point, compute all the BLI basis values
     if (.not. found_xi) then
-        denom_xi = 0.0_8
+        denom_xi = 0.0
         do i = 1, degree+1
             val = bli_coeff_vals(i) / (xi - bli_xi_vals(i))
             xi_func_vals(i) = val
@@ -1036,7 +1032,7 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
     end if
 
     if (.not. found_eta) then
-        denom_eta = 0.0_8
+        denom_eta = 0.0
         do i = 1, degree+1
             val = bli_coeff_vals(i) / (eta - bli_eta_vals(i))
             eta_func_vals(i) = val
@@ -1120,9 +1116,9 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9/10.0 ! modify this
+    cons = -7.029770573725803e-7/1.0 ! modify this
     ! cons = 0.0
-    cons1 = 0.0447867/1.0 ! modify this
+    cons1 = -0.0447867/40.0 ! modify this
     eps=1e-16
 
     sal_x = 0.0
@@ -1188,6 +1184,9 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
                 sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
+                ! sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*0.001
+                ! sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*0.001
+                ! sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*0.001
             enddo
         enddo
     enddo
@@ -1280,7 +1279,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     print *, 'pp interaction'
 
     ! compute PP interactions for target domain
-    ! call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+    call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
 
     call pass_var(sal_x, G%domain) ! halo update 
     call pass_var(sal_y, G%domain) ! halo update 
