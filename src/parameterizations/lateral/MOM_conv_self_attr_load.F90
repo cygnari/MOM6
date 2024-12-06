@@ -493,7 +493,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     isc = sal_ct%indexsg(id+1); iec = sal_ct%indexeg(id+1)
     own_points = sal_ct%pcg(id+1)
-    print *, isc, iec
 
     ! find unowned sources
     allocate(unowned_temp(size(xg)), source=-1)
@@ -501,7 +500,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(proc_loc(size(xg)), source=-1)
     pp_count = size(sal_ct%pp_interactions)
     unowned_source_count = 0
-    print *, id, sal_ct%indexsg(id+1), sal_ct%indexeg(id+1)
     do i = 1, pp_count
         i_s = sal_ct%pp_interactions(i)%index_source
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
@@ -537,8 +535,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     allocate(e_zs(unowned_source_count))
 
     sal_ct%unowned_sources = unowned_source_count
-
-    print *, id, 'unowned sources', unowned_source_count
 
     max_p = 0
     do i = 1, p
@@ -596,14 +592,12 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
-            print *, id, 'needs ', points_needed_from_proc(i+1), 'from', i
             call send_to_PE(points_from_proc_2d(:,:,i+1), points_needed_from_proc(i+1), i)
         endif
     enddo
 
     do i=0, p-1 ! receive point indices
         if (points_to_give_proc(i+1)>0) then
-            print *, id, 'gives ', points_to_give_proc(i+1), 'to', i
             call recv_from_PE(points_to_give_proc_2d(:,:,i+1), points_to_give_proc(i+1), i)
         endif
     enddo
@@ -634,11 +628,9 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
-    print *, unowned_source_count
     do i = 1, unowned_source_count
         i_sp = unowned_sources(i)
         j = 1
-        ! print *, i_sp, j_sp
         ! loop over tree panels, relabel points i_sp, j_sp => i+own_points
         treeloop: do
             if (j == -1) then
@@ -767,9 +759,6 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(xg1d, pointcount)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
-    ! do i = 1, size(xg1d)
-    !     print *, xg1d(i), yg1d(i), zg1d(i)
-    ! enddo
     ! xg/yg/zg is now a copy of all the points from all the processors
     call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 10, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
@@ -1036,7 +1025,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9*100.0 ! modify this
+    cons = -7.029770573725803e-9*1.0 ! modify this
     ! cons = 0.0
     cons1 = -0.0447867/40.0 ! modify this
     ! cons1 = 0.0
@@ -1077,7 +1066,6 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
 
     proxy_count = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
     allocate(source_proxy_weights(proxy_count), source=0.0)
-    print *, id, 'start pc', sal_ct%own_ocean_points, size(sal_ct%one_d_to_2d_i), size(sal_ct%one_d_to_2d_j)
     do i = 1, size(sal_ct%pc_interactions)
         i_s = sal_ct%pc_interactions(i)%index_source
         i_t = sal_ct%pc_interactions(i)%index_target
@@ -1109,7 +1097,6 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
             enddo
         enddo
     enddo
-    print *, id, 'end pc'
 end subroutine pc_interaction_compute
 
 subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
@@ -1120,66 +1107,27 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, isc, jsc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
     integer :: id, count, ii, ij, iec, jec
-    real, allocatable :: sshs(:), xs(:), ys(:), zs(:), a_s(:), a_x(:), a_y(:), a_z(:)
+    real, allocatable :: sshs(:), a_s(:)
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
     isc = G%isc; jsc = G%jsc; iec = G%iec; jec = G%jec
 
     allocate(sshs(sal_ct%own_ocean_points))
-    ! allocate(xs(sal_ct%own_ocean_points))
-    ! allocate(ys(sal_ct%own_ocean_points))
-    ! allocate(zs(sal_ct%own_ocean_points))
     id = PE_here()
-
-    ! count = 0
-    ! do j = jsc, jec
-    !     do i = isc, iec
-    !         if (G%mask2dT(i, j) > 0.1) then
-    !             count = count + 1
-    !             ! lat = G%geoLatT(i, j) * pi/180.0
-    !             ! lon = G%geoLonT(i, j) * pi/180.0
-    !             ! colat = 0.5*pi-lat
-    !             ! x = sin(colat)*cos(lon)
-    !             ! y = sin(colat)*sin(lon)
-    !             ! z = cos(colat)
-    !             ! xs(count) = x
-    !             ! ys(count) = y
-    !             ! zs(count) = z
-    !             sshs(count) = eta(i, j)*G%areaT(i, j)/r2
-    !         end if
-    !     enddo
-    ! enddo
     do i = 1, sal_ct%own_ocean_points
         ii = sal_ct%one_d_to_2d_i(i)
         ij = sal_ct%one_d_to_2d_j(i)
         sshs(i) = eta(ii,ij)*G%areaT(ii, ij)/r2
-        ! lat = G%geoLatT(ii, ij)*pi/180.0
-        ! lon = G%geoLonT(ii, ij)*pi/180.0
-        ! colat = 0.5*pi-lat
-        ! xs(i) = sin(colat)*cos(lon)
-        ! ys(i) = sin(colat)*sin(lon)
-        ! zs(i) = cos(colat)
     enddo
 
     allocate(a_s(sal_ct%total_ocean_points), source=0.0)
-    ! allocate(a_x(sal_ct%total_ocean_points), source=0.0)
-    ! allocate(a_y(sal_ct%total_ocean_points), source=0.0)
-    ! allocate(a_z(sal_ct%total_ocean_points), source=0.0)
-    ! print *, id, size(a_s), sal_ct%indexsg(id+1), sal_ct%indexeg(id+1), size(sshs)
     a_s(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
-    ! a_x(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = xs(:)
-    ! a_y(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = ys(:)
-    ! a_z(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = zs(:)
     call sync_PEs()
     call sum_across_PEs(a_s, sal_ct%total_ocean_points)
-    ! call sum_across_PEs(a_x, sal_ct%total_ocean_points)
-    ! call sum_across_PEs(a_y, sal_ct%total_ocean_points)
-    ! call sum_across_PEs(a_z, sal_ct%total_ocean_points)
     call sync_PEs()
 
     do i = 1, size(sal_ct%pp_interactions)
-    ! do i = 1, 1
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
         i_ti = sal_ct%one_d_to_2d_i(i_t)
@@ -1190,21 +1138,11 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
         x = sin(colat)*cos(lon)
         y = sin(colat)*sin(lon)
         z = cos(colat)
-        ! print *, i, i_s, i_t, i_ti, i_tj, x, y, z
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-            ! i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
                 i_si = i_sp - sal_ct%own_ocean_points
-                ! sx = sal_ct%e_xs(i_si)
-                ! sy = sal_ct%e_ys(i_si)
-                ! sz = sal_ct%e_zs(i_si)
-                ! ssh = e_ssh(i_si)
-                ! sx = a_x(i_sp)
-                ! sy = a_y(i_sp)
-                ! sz = a_z(i_sp)
                 ssh = a_s(sal_ct%tree_struct(i_s)%points_inside(j))
-                ! ssh = 0
             else
                 i_si = sal_ct%one_d_to_2d_i(i_sp)
                 i_sj = sal_ct%one_d_to_2d_j(i_sp)
@@ -1220,7 +1158,6 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             sal(i_ti, i_tj) = sal(i_ti, i_tj)+sal_val*ssh
             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
-            ! print *, j, i_sp, sx, sy, sz, ssh, sal_val, sal_grad_x, sal_grad_y
         enddo
     enddo
 end subroutine pp_interaction_compute

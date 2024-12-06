@@ -1479,29 +1479,19 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   ! if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp) ! sph harm SAL
   if (CS%calculate_SAL) call sal_conv_init(CS%SAL_convCSp, G) ! convolution SAL
-  print *, PE_here(), 'sal conv init done'
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
                           CS%SAL_CSp, CS%tides_CSp, CS%SAL_convCSp)
-  print *, PE_here(), 'pressure init done'
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
-  print *, 'here 0 1'
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, ntrunc, CS%vertvisc_CSp)
-  print *, 'here 0 2'
   CS%set_visc_CSp => set_visc
-  print *, 'here 0 3'
   call updateCFLtruncationValue(Time, CS%vertvisc_CSp, US, activate=is_new_run(restart_CS) )
-  print *, 'here 0 4'
   if (associated(ALE_CSp)) CS%ALE_CSp => ALE_CSp
-  print *, 'here 0 5'
   if (associated(OBC)) then
     CS%OBC => OBC
     if (OBC%ramp) call update_OBC_ramp(Time, CS%OBC, US, activate=is_new_run(restart_CS) )
   endif
-  print *, 'here 0 6'
   if (associated(update_OBC_CSp)) CS%update_OBC_CSp => update_OBC_CSp
-
-  print *, 'here 1'
 
   eta_rest_name = "sfc" ; if (.not.GV%Boussinesq) eta_rest_name = "p_bot"
   if (.not. query_initialized(CS%eta, trim(eta_rest_name), restart_CS)) then
@@ -1521,8 +1511,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   ! Copy eta into an output array.
   do j=js,je ; do i=is,ie ; eta(i,j) = CS%eta(i,j) ; enddo ; enddo
 
-  print *, 'here 2'
-
   call barotropic_init(u, v, h, CS%eta, Time, G, GV, US, param_file, diag, &
                        CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, CS%SAL_CSp)
 
@@ -1535,8 +1523,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
     call set_initialized(CS%diffv, "diffv", restart_CS)
   endif
 
-  print *, 'here 3'
-
   if (.not. query_initialized(CS%u_av, "u2", restart_CS) .or. &
       .not. query_initialized(CS%v_av, "v2", restart_CS)) then
     do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB ; CS%u_av(I,j,k) = u(I,j,k) ; enddo ; enddo ; enddo
@@ -1544,8 +1530,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
     call set_initialized(CS%u_av, "u2", restart_CS)
     call set_initialized(CS%v_av, "v2", restart_CS)
   endif
-
-  print *, 'here 4'
 
   if (CS%store_CAu) then
     if (query_initialized(CS%CAu_pred, "CAu", restart_CS) .and. &
