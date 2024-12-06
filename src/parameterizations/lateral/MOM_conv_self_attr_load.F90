@@ -645,7 +645,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
-            print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+            ! print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
             call send_to_PE(points_from_proc_2d(:,:,i+1), points_needed_from_proc(i+1), i)
         endif
     enddo
@@ -654,7 +654,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i=0, p-1 ! receive point indices
         if (points_to_give_proc(i+1)>0) then
-            print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+            ! print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
             call recv_from_PE(points_to_give_proc_2d(:,:,i+1), points_to_give_proc(i+1), i)
         endif
     enddo
@@ -1111,7 +1111,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-7/1.0 ! modify this
+    cons = -7.029770573725803e-9/1.0 ! modify this
     ! cons = 0.0
     cons1 = -0.0447867/40.0 ! modify this
     eps=1e-8
@@ -1154,8 +1154,6 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
     print *, id, 'start pc', sal_ct%own_ocean_points, size(sal_ct%one_d_to_2d_i), size(sal_ct%one_d_to_2d_j)
     do i = 1, size(sal_ct%pc_interactions)
         i_s = sal_ct%pc_interactions(i)%index_source
-        ! i_ti = sal_ct%pc_interactions(i)%index_target_i
-        ! i_tj = sal_ct%pc_interactions(i)%index_target_j
         i_t = sal_ct%pc_interactions(i)%index_target
         i_ti = sal_ct%one_d_to_2d_i(i_t)
         i_tj = sal_ct%one_d_to_2d_j(i_t)
@@ -1182,9 +1180,6 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
                 sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
-                ! sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*0.001
-                ! sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*0.001
-                ! sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*0.001
             enddo
         enddo
     enddo
@@ -1216,9 +1211,6 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
         z = cos(colat)
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-            ! i_si = sal_ct%tree_struct(i_s)%relabeled_points_inside_i(j)
-            ! i_sj = sal_ct%tree_struct(i_s)%relabeled_points_inside_j(j)
-            ! if (i_sj == -1) then ! unowned source point
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
                 i_si = i_sp - sal_ct%own_ocean_points
                 sx = sal_ct%e_xs(i_si)
