@@ -1025,11 +1025,11 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9*1.0 ! modify this
+    cons = -7.029770573725803e-9*100.0 ! modify this
     ! cons = 0.0
     cons1 = -0.0447867/40.0 ! modify this
     ! cons1 = 0.0
-    eps=1e-16
+    eps=1e-4
 
     sal_x = 0.0
     sal_y = 0.0
