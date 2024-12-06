@@ -426,15 +426,12 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     allocate(source_index(size(tree_panels)))
-    allocate(interaction_lists_temp(150*point_count))
+    allocate(interaction_lists_temp(100*point_count))
 
     interaction_count = 0
     pp_count = 0
     pc_count = 0
 
-    id = PE_here()
-
-    print *, 'here x', id, point_count, size(x), size(y), size(z)
     do i = 1, point_count
         tt_count = 6
         do k = 1, 6
@@ -444,11 +441,9 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
         xco = x(i)
         yco = y(i)
         zco = z(i)
-        ! print *, i, interaction_count, size(interaction_lists_temp)
         panelloop: do while (curr_loc <= tt_count) ! go through source panels
             i_s = source_index(curr_loc)
             c_s = tree_panels(i_s)%panel_point_count
-            ! print *, curr_loc, tt_count
             if (c_s > 0) then ! cluster has points
                 call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
                 dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0), 1.0))
@@ -482,7 +477,6 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
 
     allocate(pc_interactions(pc_count))
     allocate(pp_interactions(pp_count))
-    print *, pc_count, pp_count
 
     k = 0
     l = 0
@@ -601,7 +595,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     count = 0
     do i = 1, p ! rearrange the unowned source points so continuous by owner
         do j = 1, max_p
-            i_sp = points_from_proc_i(j, i)
+            i_sp = points_from_proc(j, i)
             if (i_sp .ne. -1) then
                 count = count + 1
                 unowned_sources(count) = i_sp
@@ -846,7 +840,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     print *, 'here 0'
 
-    print *, size(xg), size(yg), size(zg)
+    print *, size(xg1d), size(yg1d), size(zg1d)
     call sum_across_PEs(xg1d, pointcount)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
@@ -868,6 +862,7 @@ subroutine sal_conv_init(sal_ct, G)
     ! compute the interaction lists for the target points in the target domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
                                     0.7, sal_ct%own_ocean_points)
+    call sync_PEs()
     print *, sal_ct%id, 'here 4'
 
     ! compute communication patterns 
@@ -1119,7 +1114,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     cons = -7.029770573725803e-7/1.0 ! modify this
     ! cons = 0.0
     cons1 = -0.0447867/40.0 ! modify this
-    eps=1e-16
+    eps=1e-8
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1144,7 +1139,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
     type(ocean_grid_type), intent(in) :: G
     real, intent(in) :: proxy_source_weights(:)
     real, intent(inout) :: sal_x(:,:), sal_y(:,:), sal(:,:)
-    integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset, i_t, isc, jsc
+    integer :: proxy_count, i, i_s, i_ti, i_tj, j, k, offset, i_t, isc, jsc, id
     real, allocatable :: source_proxy_weights(:), cheb_xi(:), cheb_eta(:)
     real :: min_xi, max_xi, min_eta, max_eta, x, y, z, lat, lon, xi, eta, colat, pi
     real :: cx, cy, cz, sal_grad_x, sal_grad_y, sal_val
@@ -1152,8 +1147,11 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
     pi = 4.0*DATAN(1.0)
     isc = G%isc; jsc = G%jsc
 
+    id = PE_here()
+
     proxy_count = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
     allocate(source_proxy_weights(proxy_count), source=0.0)
+    print *, id, 'start pc', sal_ct%own_ocean_points, size(sal_ct%one_d_to_2d_i), size(sal_ct%one_d_to_2d_j)
     do i = 1, size(sal_ct%pc_interactions)
         i_s = sal_ct%pc_interactions(i)%index_source
         ! i_ti = sal_ct%pc_interactions(i)%index_target_i
@@ -1190,6 +1188,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
             enddo
         enddo
     enddo
+    print *, id, 'end pc'
 end subroutine pc_interaction_compute
 
 subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
@@ -1221,10 +1220,11 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             ! i_sj = sal_ct%tree_struct(i_s)%relabeled_points_inside_j(j)
             ! if (i_sj == -1) then ! unowned source point
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
-                sx = sal_ct%e_xs(i_si-sal_ct%own_ocean_points)
-                sy = sal_ct%e_ys(i_si-sal_ct%own_ocean_points)
-                sz = sal_ct%e_zs(i_si-sal_ct%own_ocean_points)
-                ssh = e_ssh(i_sp)
+                i_si = i_sp - sal_ct%own_ocean_points
+                sx = sal_ct%e_xs(i_si)
+                sy = sal_ct%e_ys(i_si)
+                sz = sal_ct%e_zs(i_si)
+                ssh = e_ssh(i_si)
             else
                 i_si = sal_ct%one_d_to_2d_i(i_sp)
                 i_sj = sal_ct%one_d_to_2d_j(i_sp)
@@ -1280,6 +1280,8 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
 
     ! compute PP interactions for target domain
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+
+    call sync_PEs()
 
     call pass_var(sal_x, G%domain) ! halo update 
     call pass_var(sal_y, G%domain) ! halo update 
