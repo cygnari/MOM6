@@ -33,11 +33,7 @@ type, private :: cube_panel
     real :: mid_eta
     real :: max_eta
     real :: radius ! distance from center of panel to corner
-    ! integer, allocatable :: points_inside_i(:)
-    ! integer, allocatable :: points_inside_j(:) ! i/j indices of contained points
     integer, allocatable :: points_inside(:) ! indices of contained points
-    ! integer, allocatable :: relabeled_points_inside_i(:)
-    ! integer, allocatable :: relabeled_points_inside_j(:)
     integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
 
@@ -47,8 +43,6 @@ end type cube_panel
 
 type, private :: interaction_pair 
     ! data type to represent a pp/pc interaction between a point and a cube panel
-    ! integer :: index_target_i
-    ! integer :: index_target_j
     integer :: index_target
     integer :: index_source 
     integer :: interact_type ! 0 for PP, 1 for PC
@@ -62,15 +56,11 @@ type, public :: SAL_conv_type ; private
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(cube_panel), allocatable :: tree_struct(:)
-    ! integer, allocatable :: points_panels(:,:,:) ! points_panels(lev, i, j) = k means that point i, j (local coordinates) is contained in k
-    integer, allocatable :: points_panels(:,:) 
+    integer, allocatable :: points_panels(:,:) ! points_panels(lev, i)=k means that point i is contained in panel k at level lev
     integer :: p ! total ranks
     integer :: id ! rank
-    ! integer, allocatable :: points_to_give_i(:,:), points_to_give_j(:,:), 
     integer, allocatable :: points_to_give_proc(:) ! communication patterns
-    ! integer, allocatable :: points_to_get_i(:,:), points_to_get_j(:,:), 
     integer, allocatable :: points_to_get_proc(:) ! second index is rank
-    ! integer, allocatable :: unowned_source_points_i(:), unowned_source_points_j(:)
     integer, allocatable :: points_to_give(:,:), points_to_get(:,:), unowned_source_points(:)
     integer :: unowned_sources
     integer :: interp_degree 
@@ -106,7 +96,6 @@ integer function face_from_xyz(x, y, z)
         else
         face = 4
         end if
-    ! else if ((az >= ax) .and. (az >= ay)) then
     else
         if (z >= 0) then
         face = 5
@@ -205,17 +194,14 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
     integer, intent(in) :: cluster_thresh, point_count
-    ! real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! these are the size of the global domain
     real, intent(in) :: xg(:), yg(:), zg(:)
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
-    integer, allocatable :: curr_loc(:), temp_i(:), temp_j(:), temp(:)
-    integer :: face, i, panel_count, j, count, index, index_i, index_j, k
-    integer :: which_panel, imax, jmax, ic, jc, total
+    integer, allocatable :: curr_loc(:), temp(:)
+    integer :: face, i, panel_count, j, count, index, k
+    integer :: which_panel, total
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
 
     pi = 4.D0*DATAN(1.D0)
-    call get_global_grid_size(G, imax, jmax)
-    ! point_count = imax*jmax
     allocate(tree_panels_temp(max(6, point_count)))
     allocate(curr_loc(6))
 
@@ -258,7 +244,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     do while (i <= panel_count)
         ! first check if panel needs to be divided
         count = tree_panels_temp(i)%panel_point_count
-        ! print *, i, panel_count, size(tree_panels_temp), count
         IF ((count >= cluster_thresh) .and. (tree_panels_temp(i)%is_leaf)) THEN
             ! panel is a leaf and has many points => refine
             tree_panels_temp(i)%is_leaf = .false.
@@ -271,7 +256,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
             ! four new panels are index panel_count+1 through panel_count+4
             DO j = 1, 4
                 index = panel_count+j
-                ! print *, index, i
                 tree_panels_temp(panel_count+j)%parent_panel = i
                 tree_panels_temp(panel_count+j)%level = tree_panels_temp(i)%level + 1
                 tree_panels_temp(panel_count+j)%face = tree_panels_temp(i)%face
@@ -304,11 +288,11 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
             tree_panels_temp(i)%child_panel_3 = panel_count+3
             tree_panels_temp(i)%child_panel_4 = panel_count+4
 
+            curr_loc(:) = 0
             DO j = 1, tree_panels_temp(i)%panel_point_count
                 ! loop through points contained in parent panel, assign to sub panels
                 index = tree_panels_temp(i)%points_inside(j)
                 xval = xg(index); yval = yg(index); zval = zg(index)
-                ! print *, j, index, xval, yval, zval
                 call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
                 IF (xi < mid_xi) THEN
                     IF (eta < mid_eta) THEN
@@ -381,10 +365,8 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
     ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
     type(ocean_grid_type), intent(in) :: G
     type(cube_panel), intent(in) :: tree_panels(:)
-    ! real, intent(in) :: x(:,:), y(:,:), z(:,:) ! size of computational domain
     real, intent(in) :: x(:), y(:), z(:)
     integer, intent(in) :: levs
-    ! integer, intent(inout) :: points_panels(:,:,:)
     integer, intent(inout) :: points_panels(:,:)
     integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
     real :: xco, yco, zco
@@ -414,7 +396,6 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
     type(ocean_grid_type), intent(in) :: G
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
-    ! real, intent(in) :: x(:,:), y(:,:), z(:,:), theta ! x, y, z are the target domain
     real, intent(in) :: x(:), y(:), z(:), theta
     integer, intent(in) :: point_count
     integer, allocatable :: source_index(:)
@@ -448,7 +429,6 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
                 call xyz_from_xieta(xs, ys, zs, tree_panels(i_s)%mid_xi, tree_panels(i_s)%mid_eta, tree_panels(i_s)%face)
                 dist = ACOS(MIN(MAX(xco*xs+yco*ys+zco*zs, -1.0), 1.0))
                 separation = tree_panels(i_s)%radius/dist
-                ! if ((dist > 0) .and. (separation < theta).and. (.not. tree_panels(i_s)%contains_point(xco, yco, zco))) then ! well separated, do pc interaction
                 if ((dist > 0) .and. (separation < theta)) then
                     interaction_count = interaction_count + 1
                     pc_count = pc_count + 1
@@ -493,7 +473,6 @@ end subroutine interaction_list_compute
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     type(sal_conv_type), intent(inout) :: sal_ct
-    ! real, intent(in) :: xg(:,:), yg(:,:), zg(:,:) ! computational domain size
     real, intent(in) :: xg(:), yg(:), zg(:)
     type(ocean_grid_type), intent(in) :: G
     integer :: p, id, unowned_source_count, pp_count, i, i_s, j, i_sp, j_sp, k, max_p, pl, count
@@ -514,30 +493,24 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     isc = sal_ct%indexsg(id+1); iec = sal_ct%indexeg(id+1)
     own_points = sal_ct%pcg(id+1)
+    print *, isc, iec
 
-!     ! find unowned sources
+    ! find unowned sources
     allocate(unowned_temp(size(xg)), source=-1)
     allocate(points_needed_from_proc(p), source=0)
     allocate(proc_loc(size(xg)), source=-1)
-    print *, id, 'here 4 -4'
     pp_count = size(sal_ct%pp_interactions)
     unowned_source_count = 0
     print *, id, sal_ct%indexsg(id+1), sal_ct%indexeg(id+1)
     do i = 1, pp_count
         i_s = sal_ct%pp_interactions(i)%index_source
-        ! print *, pp_count, i, i_s
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
             ! loop over points in source panel, check if owned
-            ! i_sp = sal_ct%tree_struct(i_s)%points_inside_i(j)
-            ! j_sp = sal_ct%tree_struct(i_s)%points_inside_j(j)
             i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
             ! check if point is in the data domain
-            ! if (((i_sp < isdg) .or. (i_sp > iedg)) .or. ((j_sp < jsdg) .or. (j_sp > jedg))) then ! outside of data domain
-            ! if (((i_sp < isc) .or. (i_sp > iec)) .or. ((j_sp < jsc) .or. (j_sp > jec))) then ! outside of computational domain
             if ((i_sp < isc) .or. (i_sp > iec)) then ! outside of computational domain
                 found = .false.
                 kloop: do k = 1, unowned_source_count
-                    ! if ((unowned_temp_i(k) == i_sp) .and. (unowned_temp_j(k) == j_sp)) then
                     if (unowned_temp(k) == i_sp) then
                         found = .true.
                     end if
@@ -545,14 +518,10 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                 if (.not. found) then
                     ! new unowned point
                     unowned_source_count = unowned_source_count + 1
-                    ! unowned_temp_i(unowned_source_count) = i_sp
-                    ! unowned_temp_j(unowned_source_count) = j_sp
                     unowned_temp(unowned_source_count) = i_sp
-                    ! find which processor owns i_sp,j_sp
+                    ! find which processor owns i_sp
                     kloop2: do k = 1, p
                         if ((i_sp >= sal_ct%indexsg(k)) .and. (i_sp <= sal_ct%indexeg(k))) then
-                        ! if ((i_sp >= proc_start_i(k)) .and. (i_sp <= proc_end_i(k)) .and. (j_sp >= proc_start_j(k)) &
-                        !                                 .and. (j_sp <= proc_end_j(k))) then
                             points_needed_from_proc(k) = points_needed_from_proc(k) + 1
                             proc_loc(unowned_source_count) = k
                         end if
@@ -562,8 +531,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    print *, id, 'here 4 -3'
-
     allocate(unowned_sources(unowned_source_count))
     allocate(e_xs(unowned_source_count))
     allocate(e_ys(unowned_source_count))
@@ -571,12 +538,12 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     sal_ct%unowned_sources = unowned_source_count
 
+    print *, id, 'unowned sources', unowned_source_count
+
     max_p = 0
     do i = 1, p
         max_p = max(max_p, points_needed_from_proc(i))
     enddo
-
-    print *, id, 'here 4 -2'
 
     allocate(points_from_proc(max_p, p), source=-1)
     allocate(points_from_proc_2d(1, max_p, p), source=-1)
@@ -589,8 +556,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         points_from_proc(temp_locs(pl), pl) = unowned_temp(i)
         points_from_proc_2d(1, temp_locs(pl), pl) = unowned_temp(i)
     enddo
-
-    print *, id, 'here 4 -1'
 
     count = 0
     do i = 1, p ! rearrange the unowned source points so continuous by owner
@@ -609,14 +574,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     sal_ct%e_xs = e_xs
     sal_ct%e_ys = e_ys
     sal_ct%e_zs = e_zs
-
-    print *, id, 'here 4 0'
-
     allocate(points_to_give_proc(p), source=0)
-
-    do i = 1,p
-        print *, 'before 1 id ', id, ' receive ', points_needed_from_proc(i), ' from ', i-1
-    enddo
 
     do i = 1,p
         call send_to_PE(points_needed_from_proc(i), i-1)
@@ -628,43 +586,29 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     call sync_PEs()
 
-    do i = 1,p
-        print *, 'after 2 id ', id, ' give ', points_to_give_proc(i), ' to ', i-1
-    enddo
-
     max_p = 0
     do i = 1, p
         max_p = max(max_p, points_to_give_proc(i))
     enddo
-    print *, 'here 7 8'
 
     allocate(points_to_give_proc_index(max_p, p), source=-1)
     allocate(points_to_give_proc_2d(1, max_p, p), source=-1)
 
-    print *, id, 'here 4 1'
-
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
-            ! print *, 'id ', id, ' receive ', points_needed_from_proc(i+1), ' from ', i
+            print *, id, 'needs ', points_needed_from_proc(i+1), 'from', i
             call send_to_PE(points_from_proc_2d(:,:,i+1), points_needed_from_proc(i+1), i)
         endif
     enddo
 
-    print *, id, 'here 4 2'
-
     do i=0, p-1 ! receive point indices
         if (points_to_give_proc(i+1)>0) then
-            ! print *, 'id ', id, ' give ', points_to_give_proc(i+1), ' to ', i
+            print *, id, 'gives ', points_to_give_proc(i+1), 'to', i
             call recv_from_PE(points_to_give_proc_2d(:,:,i+1), points_to_give_proc(i+1), i)
         endif
     enddo
 
-    print *, id, 'here 4 3'
-
     call sync_PEs()
-
-    print *, id, 'here 4 4'
-
     do i = 1, p-1
         if (points_to_give_proc(i+1)>0) then
             points_to_give_proc_index(:,i) = points_to_give_proc_2d(1,:,i)-isc ! shift to local indices 
@@ -688,15 +632,13 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    print *, id, 'here 4 5'
-
     ! relabel sources in tree for unowned points needed for pp interactions
     count = 0
     print *, unowned_source_count
     do i = 1, unowned_source_count
         i_sp = unowned_sources(i)
         j = 1
-        print *, i_sp, j_sp
+        ! print *, i_sp, j_sp
         ! loop over tree panels, relabel points i_sp, j_sp => i+own_points
         treeloop: do
             if (j == -1) then
@@ -719,7 +661,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
-    print *, id, 'here 4 6'
 end subroutine calculate_communications
 
 subroutine sal_conv_init(sal_ct, G)
@@ -749,12 +690,10 @@ subroutine sal_conv_init(sal_ct, G)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
-    ! isg = G%isg; ieg = G%ieg; jsg = G%jsg; jeg = G%jeg
-    ig_off = G%idg_offset+isg-isd
-    jg_off = G%jdg_offset+jsg-jsd
-    isg = isc+ig_off; ieg = iec+ig_off; jsg = jsc+jg_off; jeg = jec+jg_off
-    call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
-    print *, 'here -5'
+    ! ig_off = G%idg_offset+isg-isd
+    ! jg_off = G%jdg_offset+jsg-jsd
+    ! isg = isc+ig_off; ieg = iec+ig_off; jsg = jsc+jg_off; jeg = jec+jg_off
+    ! call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
     ic=iec-isc+1; jc=jec-jsc+1
 
@@ -775,8 +714,6 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(zc1d(count), source=0.0)
     sal_ct%own_ocean_points = count
 
-    print *, 'here -4'
-
     count = 0
     do j = jsc, jec
         do i = isc, iec
@@ -792,22 +729,17 @@ subroutine sal_conv_init(sal_ct, G)
                 xc1d(count) = x
                 yc1d(count) = y
                 zc1d(count) = z
-                sal_ct%one_d_to_2d_i(sal_ct%two_d_to_1d(i, j)) = i
-                sal_ct%one_d_to_2d_j(sal_ct%two_d_to_1d(i, j)) = j
+                sal_ct%one_d_to_2d_i(count) = i
+                sal_ct%one_d_to_2d_j(count) = j
             end if
         enddo
     enddo
-
-    print *, 'here -3'
 
     allocate(pcg(sal_ct%p), source=0)
     allocate(indexsg(sal_ct%p), source=0)
     allocate(indexeg(sal_ct%p), source=0)
     pcg(sal_ct%id+1) = count
-
     call sum_across_PEs(pcg, sal_ct%p)
-
-    print *, 'here -2'
 
     indexsg(1) = 1
     do i = 1, sal_ct%p-1
@@ -829,18 +761,9 @@ subroutine sal_conv_init(sal_ct, G)
     allocate(xg1d(pointcount), source=0.0)
     allocate(yg1d(pointcount), source=0.0)
     allocate(zg1d(pointcount), source=0.0)
-
-    print *, 'here -1'
-
-    print *, indexsg(sal_ct%id+1), indexeg(sal_ct%id+1), size(xg1d), size(xc1d), pcg(1)
-
     xg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = xc1d(:)
     yg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = yc1d(:)
     zg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = zc1d(:)
-
-    print *, 'here 0'
-
-    print *, size(xg1d), size(yg1d), size(zg1d)
     call sum_across_PEs(xg1d, pointcount)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
@@ -848,30 +771,22 @@ subroutine sal_conv_init(sal_ct, G)
     !     print *, xg1d(i), yg1d(i), zg1d(i)
     ! enddo
     ! xg/yg/zg is now a copy of all the points from all the processors
-    print *, sal_ct%id, 'here 1'
     call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 10, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
-    print *, sal_ct%id, 'here 2'
 
-    ! allocate(sal_ct%points_panels(max_level+1, ic, jc), source=-1)
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
     ! finds which panels contain the computational domain points
     call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level) 
-    print *, sal_ct%id, 'here 3'
 
     ! compute the interaction lists for the target points in the target domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
                                     0.7, sal_ct%own_ocean_points)
     call sync_PEs()
-    print *, sal_ct%id, 'here 4'
 
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
-    print *, sal_ct%id, 'here 5'
-    ! print *, 'test'
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
-
     sal_ct%interp_degree=3
 end subroutine sal_conv_init
 
@@ -884,7 +799,6 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     integer :: max_give, max_get, p, id, i, j, i_s, j_s, i_off, j_off, count, index
     real, allocatable :: points_to_give(:,:,:), points_received(:,:,:)
     real :: area, rad2
-    ! integer, allocatable :: pelist(:)
 
     p = sal_ct%p; id = sal_ct%id
     i_off = G%isg - G%isc; j_off = G%jsg - G%jsc
@@ -901,10 +815,7 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
 
     do i = 1, p
         do j = 1, max_give
-            ! i_s = sal_ct%points_to_give_i(j, i)
-            ! j_s = sal_ct%points_to_give_j(j, i)
             index = sal_ct%points_to_give(j, i)
-            ! if ((i_s .ne. -1) .and. (j_s .ne. -1)) then
             if (index .ne. -1) then
                 i_s = sal_ct%one_d_to_2d_i(index)
                 j_s = sal_ct%one_d_to_2d_j(index)
@@ -936,6 +847,27 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
         enddo
     enddo
 end subroutine ssh_pp_communications
+
+subroutine ssh_pp_communications2(sal_ct, G, eta, e_ssh)
+    type(SAL_conv_type), intent(in) :: sal_ct
+    type(ocean_grid_type), intent(in) :: G
+    real, intent(in) :: eta(:,:)
+    real, intent(inout) :: e_ssh(:)
+    integer :: i, ii, ij, id
+    real, allocatable :: sshs(:)
+
+    allocate(sshs(sal_ct%own_ocean_points))
+    id = PE_here()
+
+    do i = 1, sal_ct%own_ocean_points
+        ii = sal_ct%one_d_to_2d_i(i)
+        ij = sal_ct%one_d_to_2d_j(i)
+        sshs(i) = eta(ii,ij)
+    enddo
+
+    e_ssh(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
+    call sum_across_PEs(e_ssh, sal_ct%total_ocean_points)
+end subroutine ssh_pp_communications2
 
 subroutine bli_coeffs(coeffs, degree)
     real, allocatable, intent(out) :: coeffs(:)
@@ -1062,11 +994,9 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     ic = iec-isc+1; jc = jec-jsc+1
     r2 = G%Rad_Earth ** 2
 
-    print *, 'psc 1'
     do i = 1, sal_ct%own_ocean_points
         ii = sal_ct%one_d_to_2d_i(i)
         ij = sal_ct%one_d_to_2d_j(i)
-        ! print *, i, ii, ij
         lat = G%geoLatT(ii, ij)*pi/180.0
         lon = G%geoLonT(ii, ij)*pi/180.0
         colat = 0.5*pi-lat
@@ -1075,9 +1005,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
         z = cos(colat)
         a = G%areaT(ii, ij)/r2
         ssh = sshs(ii, ij)
-        ! panelloop2: do k = 1, size(sal_ct%points_panels(:,i,j))
         panelloop2: do k = 1, size(sal_ct%points_panels(:,i))
-            ! i_t = sal_ct%points_panels(k,i,j)
             i_t = sal_ct%points_panels(k, i)
             if (i_t == -1) then
                 exit panelloop2
@@ -1098,12 +1026,9 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
                 enddo
             end if
         enddo panelloop2
-    !     enddo
     enddo
-    print *, 'psc 2'
 
     call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
-    ! end if
 end subroutine proxy_source_compute
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
@@ -1111,10 +1036,11 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
 
-    cons = -7.029770573725803e-9/1.0 ! modify this
+    cons = -7.029770573725803e-9*100.0 ! modify this
     ! cons = 0.0
     cons1 = -0.0447867/40.0 ! modify this
-    eps=1e-8
+    ! cons1 = 0.0
+    eps=1e-16
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1193,12 +1119,67 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     real, intent(in) :: e_ssh(:), eta(:,:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, isc, jsc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
+    integer :: id, count, ii, ij, iec, jec
+    real, allocatable :: sshs(:), xs(:), ys(:), zs(:), a_s(:), a_x(:), a_y(:), a_z(:)
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
-    isc = G%isc; jsc = G%jsc
+    isc = G%isc; jsc = G%jsc; iec = G%iec; jec = G%jec
+
+    allocate(sshs(sal_ct%own_ocean_points))
+    ! allocate(xs(sal_ct%own_ocean_points))
+    ! allocate(ys(sal_ct%own_ocean_points))
+    ! allocate(zs(sal_ct%own_ocean_points))
+    id = PE_here()
+
+    ! count = 0
+    ! do j = jsc, jec
+    !     do i = isc, iec
+    !         if (G%mask2dT(i, j) > 0.1) then
+    !             count = count + 1
+    !             ! lat = G%geoLatT(i, j) * pi/180.0
+    !             ! lon = G%geoLonT(i, j) * pi/180.0
+    !             ! colat = 0.5*pi-lat
+    !             ! x = sin(colat)*cos(lon)
+    !             ! y = sin(colat)*sin(lon)
+    !             ! z = cos(colat)
+    !             ! xs(count) = x
+    !             ! ys(count) = y
+    !             ! zs(count) = z
+    !             sshs(count) = eta(i, j)*G%areaT(i, j)/r2
+    !         end if
+    !     enddo
+    ! enddo
+    do i = 1, sal_ct%own_ocean_points
+        ii = sal_ct%one_d_to_2d_i(i)
+        ij = sal_ct%one_d_to_2d_j(i)
+        sshs(i) = eta(ii,ij)*G%areaT(ii, ij)/r2
+        ! lat = G%geoLatT(ii, ij)*pi/180.0
+        ! lon = G%geoLonT(ii, ij)*pi/180.0
+        ! colat = 0.5*pi-lat
+        ! xs(i) = sin(colat)*cos(lon)
+        ! ys(i) = sin(colat)*sin(lon)
+        ! zs(i) = cos(colat)
+    enddo
+
+    allocate(a_s(sal_ct%total_ocean_points), source=0.0)
+    ! allocate(a_x(sal_ct%total_ocean_points), source=0.0)
+    ! allocate(a_y(sal_ct%total_ocean_points), source=0.0)
+    ! allocate(a_z(sal_ct%total_ocean_points), source=0.0)
+    ! print *, id, size(a_s), sal_ct%indexsg(id+1), sal_ct%indexeg(id+1), size(sshs)
+    a_s(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
+    ! a_x(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = xs(:)
+    ! a_y(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = ys(:)
+    ! a_z(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = zs(:)
+    call sync_PEs()
+    call sum_across_PEs(a_s, sal_ct%total_ocean_points)
+    ! call sum_across_PEs(a_x, sal_ct%total_ocean_points)
+    ! call sum_across_PEs(a_y, sal_ct%total_ocean_points)
+    ! call sum_across_PEs(a_z, sal_ct%total_ocean_points)
+    call sync_PEs()
 
     do i = 1, size(sal_ct%pp_interactions)
+    ! do i = 1, 1
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
         i_ti = sal_ct%one_d_to_2d_i(i_t)
@@ -1209,14 +1190,21 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
         x = sin(colat)*cos(lon)
         y = sin(colat)*sin(lon)
         z = cos(colat)
+        ! print *, i, i_s, i_t, i_ti, i_tj, x, y, z
         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+            ! i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
                 i_si = i_sp - sal_ct%own_ocean_points
-                sx = sal_ct%e_xs(i_si)
-                sy = sal_ct%e_ys(i_si)
-                sz = sal_ct%e_zs(i_si)
-                ssh = e_ssh(i_si)
+                ! sx = sal_ct%e_xs(i_si)
+                ! sy = sal_ct%e_ys(i_si)
+                ! sz = sal_ct%e_zs(i_si)
+                ! ssh = e_ssh(i_si)
+                ! sx = a_x(i_sp)
+                ! sy = a_y(i_sp)
+                ! sz = a_z(i_sp)
+                ssh = a_s(sal_ct%tree_struct(i_s)%points_inside(j))
+                ! ssh = 0
             else
                 i_si = sal_ct%one_d_to_2d_i(i_sp)
                 i_sj = sal_ct%one_d_to_2d_j(i_sp)
@@ -1232,6 +1220,7 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             sal(i_ti, i_tj) = sal(i_ti, i_tj)+sal_val*ssh
             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
+            ! print *, j, i_sp, sx, sy, sz, ssh, sal_val, sal_grad_x, sal_grad_y
         enddo
     enddo
 end subroutine pp_interaction_compute
@@ -1250,25 +1239,19 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     sal_y(:,:) = 0.0
     e_sal(:,:) = 0.0
 
-    print *, 'ssh communication'
-
     ! do SSH communication needed for PP interactions
-    allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
+    ! allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
+    allocate(e_ssh(sal_ct%total_ocean_points), source=0.0)
     ! call ssh_pp_communications(sal_ct, G, eta, e_ssh)
-
-    print *, 'proxy source compute'
+    ! call ssh_pp_communications2(sal_ct, G, eta, e_ssh)
 
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
     call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
-    print *, 'pc interaction'
-
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
-
-    print *, 'pp interaction'
 
     ! compute PP interactions for target domain
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)

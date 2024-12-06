@@ -381,21 +381,21 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
 
   ! Calculate and add the tidal geopotential anomaly.
   if (CS%tides) then
-    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq)) then
-      call calc_tidal_forcing(CS%Time, e_tide_eq, e_tide_sal, G, US, CS%tides_CSp)
-      !$OMP parallel do default(shared)
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        za(i,j) = za(i,j) - GV%g_Earth * (e_tide_eq(i,j) + e_tide_sal(i,j))
-      enddo ; enddo
-    else  ! This block recreates older answers with tides.
-      if (.not.CS%calculate_SAL) e_sal(:,:) = 0.0
-      call calc_tidal_forcing_legacy(CS%Time, e_sal, e_sal_tide, e_tide_eq, e_tide_sal, &
-                                     G, US, CS%tides_CSp)
-      !$OMP parallel do default(shared)
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        za(i,j) = za(i,j) - GV%g_Earth * e_sal_tide(i,j)
-      enddo ; enddo
-    endif
+    ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq)) then
+    call calc_tidal_forcing(CS%Time, e_tide_eq, e_tide_sal, G, US, CS%tides_CSp)
+    !$OMP parallel do default(shared)
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      za(i,j) = za(i,j) - GV%g_Earth * (e_tide_eq(i,j) + e_tide_sal(i,j))
+    enddo ; enddo
+    ! else  ! This block recreates older answers with tides.
+    !   if (.not.CS%calculate_SAL) e_sal(:,:) = 0.0
+    !   call calc_tidal_forcing_legacy(CS%Time, e_sal, e_sal_tide, e_tide_eq, e_tide_sal, &
+    !                                  G, US, CS%tides_CSp)
+    !   !$OMP parallel do default(shared)
+    !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    !     za(i,j) = za(i,j) - GV%g_Earth * e_sal_tide(i,j)
+    !   enddo ; enddo
+    ! endif
   endif
 
   if (CS%GFS_scale < 1.0) then
