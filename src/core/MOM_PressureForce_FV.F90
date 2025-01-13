@@ -203,8 +203,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   alpha_ref = 1.0 / CS%Rho0
   I_gEarth = 1.0 / GV%g_Earth
 
-  print *, 'non bouss'
-
   ! if (use_p_atm) then
   !   !$OMP parallel do default(shared)
   !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
