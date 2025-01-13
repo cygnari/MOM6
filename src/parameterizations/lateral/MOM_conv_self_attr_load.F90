@@ -72,6 +72,8 @@ type, public :: SAL_conv_type ; private
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
+integer :: id_clock_SAL_pc
+integer :: id_clock_SAL_pp
 
 contains
 
@@ -817,6 +819,8 @@ subroutine sal_conv_init(sal_ct, G)
     call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
+    id_clock_SAL_pc = cpu_clock_id('(Ocean SAL PC interactions)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp = cpu_clock_id('(Ocean SAL PP interactions)', grain=CLOCK_MODULE)
     sal_ct%interp_degree=3
 end subroutine sal_conv_init
 
@@ -1133,20 +1137,6 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     r2 = G%Rad_Earth ** 2
     isc = G%isc; jsc = G%jsc; iec = G%iec; jec = G%jec
 
-    ! allocate(sshs(sal_ct%own_ocean_points))
-    ! id = PE_here()
-    ! do i = 1, sal_ct%own_ocean_points
-    !     ii = sal_ct%one_d_to_2d_i(i)
-    !     ij = sal_ct%one_d_to_2d_j(i)
-    !     sshs(i) = eta(ii,ij)*G%areaT(ii, ij)/r2
-    ! enddo
-
-    ! allocate(a_s(sal_ct%total_ocean_points), source=0.0)
-    ! a_s(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
-    ! call sync_PEs()
-    ! call sum_across_PEs(a_s, sal_ct%total_ocean_points)
-    ! call sync_PEs()
-
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
@@ -1162,7 +1152,6 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
                 i_si = i_sp - sal_ct%own_ocean_points
-                ! ssh = a_s(sal_ct%tree_struct(i_s)%points_inside(j))
                 ssh = e_ssh(i_si)
                 sx = sal_ct%e_xs(i_si)
                 sy = sal_ct%e_ys(i_si)
@@ -1200,11 +1189,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     sal_y(:,:) = 0.0
     e_sal(:,:) = 0.0
 
-    ! do SSH communication needed for PP interactions
-    allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
-    ! allocate(e_ssh(sal_ct%total_ocean_points), source=0.0)
-    call ssh_pp_communications(sal_ct, G, eta, e_ssh)
-    ! call ssh_pp_communications2(sal_ct, G, eta, e_ssh)
+    call cpu_clock_begin(id_clock_SAL_pc)
 
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
@@ -1214,8 +1199,17 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
 
+    call cpu_clock_end(id_clock_SAL_pc)
+    call cpu_clock_begin(id_clock_SAL_pp)
+
+    ! do SSH communication needed for PP interactions
+    allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
+    call ssh_pp_communications(sal_ct, G, eta, e_ssh)
+
     ! compute PP interactions for target domain
     call pp_interaction_compute(sal_ct, G, eta, e_sal, sal_x, sal_y, e_ssh)
+
+    call cpu_clock_end(id_clock_SAL_pp)
 
     call sync_PEs()
 
