@@ -529,6 +529,8 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
+    ! print *, id, " has ", unowned_source_count, " unowned sources"
+
     allocate(unowned_sources(unowned_source_count))
     allocate(e_xs(unowned_source_count))
     allocate(e_ys(unowned_source_count))
@@ -574,10 +576,12 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i = 1,p
         call send_to_PE(points_needed_from_proc(i), i-1)
+        ! print *, id, ' needs ', points_needed_from_proc(i), ' from proc ', i-1
     enddo
 
     do i = 1,p
         call recv_from_PE(points_to_give_proc(i), i-1)
+        ! print *, id, ' sends ', points_to_give_proc(i), ' to proc ', i-1
     enddo
 
     call sync_PEs()
@@ -589,6 +593,17 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_to_give_proc_index(max_p, p), source=-1)
     allocate(points_to_give_proc_2d(1, max_p, p), source=-1)
+
+    ! do i=0, p-1
+    !     call sync_PEs()
+    !     if (id == i) then
+    !         print *, id, ' needs points: '
+    !         do j = 1, points_needed_from_proc(p-id)
+    !             print *, points_from_proc_2d(1,j,p-id)
+    !         enddo
+    !         print *, '-------------------------'
+    !     endif
+    ! enddo
 
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
@@ -602,12 +617,38 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
+    ! do i=0, p-1
+    !     call sync_PEs()
+    !     if (id == i) then
+    !         print *, id, ' sends points: '
+    !         do j = 1, points_to_give_proc(p-id)
+    !             print *, points_to_give_proc_2d(1,j,p-id)
+    !         enddo
+    !         print *, '-------------------------'
+    !     endif
+    ! enddo
+
     call sync_PEs()
-    do i = 1, p-1
-        if (points_to_give_proc(i+1)>0) then
-            points_to_give_proc_index(:,i) = points_to_give_proc_2d(1,:,i)-isc ! shift to local indices 
+    do i = 1,p
+        if (points_to_give_proc(i)>0) then
+            do j = 1, points_to_give_proc(i)
+                if (points_to_give_proc_2d(1,j,i)>=0) then
+                    points_to_give_proc_index(j,i) = points_to_give_proc_2d(1,j,i)-isc+1 ! shift to local indices 
+                endif
+            enddo
         endif
     enddo
+
+    ! do i=0, p-1
+    !     call sync_PEs()
+    !     if (id == i) then
+    !         print *, id, ' sends points: '
+    !         do j = 1, points_to_give_proc(p-id)
+    !             print *, points_to_give_proc_index(j,p-id)
+    !         enddo
+    !         print *, '-------------------------'
+    !     endif
+    ! enddo
 
     sal_ct%points_to_give = points_to_give_proc_index
     sal_ct%points_to_give_proc = points_to_give_proc
@@ -837,27 +878,6 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     enddo
 end subroutine ssh_pp_communications
 
-subroutine ssh_pp_communications2(sal_ct, G, eta, e_ssh)
-    type(SAL_conv_type), intent(in) :: sal_ct
-    type(ocean_grid_type), intent(in) :: G
-    real, intent(in) :: eta(:,:)
-    real, intent(inout) :: e_ssh(:)
-    integer :: i, ii, ij, id
-    real, allocatable :: sshs(:)
-
-    allocate(sshs(sal_ct%own_ocean_points))
-    id = PE_here()
-
-    do i = 1, sal_ct%own_ocean_points
-        ii = sal_ct%one_d_to_2d_i(i)
-        ij = sal_ct%one_d_to_2d_j(i)
-        sshs(i) = eta(ii,ij)
-    enddo
-
-    e_ssh(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
-    call sum_across_PEs(e_ssh, sal_ct%total_ocean_points)
-end subroutine ssh_pp_communications2
-
 subroutine bli_coeffs(coeffs, degree)
     real, allocatable, intent(out) :: coeffs(:)
     integer, intent(in) :: degree
@@ -967,7 +987,7 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
     enddo
 end subroutine interp_vals_bli
 
-subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
+subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add reproducing sum
     type(SAL_conv_type), intent(in) :: sal_ct
     real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
@@ -1020,7 +1040,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights)
     call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
 end subroutine proxy_source_compute
 
-subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y)
+subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore impact of eps and cons more
     real, intent(in) :: tx, ty, tz, sx, sy, sz
     real, intent(out) :: sal_x, sal_y, sal
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
@@ -1113,19 +1133,19 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     r2 = G%Rad_Earth ** 2
     isc = G%isc; jsc = G%jsc; iec = G%iec; jec = G%jec
 
-    allocate(sshs(sal_ct%own_ocean_points))
-    id = PE_here()
-    do i = 1, sal_ct%own_ocean_points
-        ii = sal_ct%one_d_to_2d_i(i)
-        ij = sal_ct%one_d_to_2d_j(i)
-        sshs(i) = eta(ii,ij)*G%areaT(ii, ij)/r2
-    enddo
+    ! allocate(sshs(sal_ct%own_ocean_points))
+    ! id = PE_here()
+    ! do i = 1, sal_ct%own_ocean_points
+    !     ii = sal_ct%one_d_to_2d_i(i)
+    !     ij = sal_ct%one_d_to_2d_j(i)
+    !     sshs(i) = eta(ii,ij)*G%areaT(ii, ij)/r2
+    ! enddo
 
-    allocate(a_s(sal_ct%total_ocean_points), source=0.0)
-    a_s(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
-    call sync_PEs()
-    call sum_across_PEs(a_s, sal_ct%total_ocean_points)
-    call sync_PEs()
+    ! allocate(a_s(sal_ct%total_ocean_points), source=0.0)
+    ! a_s(sal_ct%indexsg(id+1):sal_ct%indexeg(id+1)) = sshs(:)
+    ! call sync_PEs()
+    ! call sum_across_PEs(a_s, sal_ct%total_ocean_points)
+    ! call sync_PEs()
 
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
@@ -1142,7 +1162,11 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
                 i_si = i_sp - sal_ct%own_ocean_points
-                ssh = a_s(sal_ct%tree_struct(i_s)%points_inside(j))
+                ! ssh = a_s(sal_ct%tree_struct(i_s)%points_inside(j))
+                ssh = e_ssh(i_si)
+                sx = sal_ct%e_xs(i_si)
+                sy = sal_ct%e_ys(i_si)
+                sz = sal_ct%e_zs(i_si)
             else
                 i_si = sal_ct%one_d_to_2d_i(i_sp)
                 i_sj = sal_ct%one_d_to_2d_j(i_sp)
@@ -1177,9 +1201,9 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     e_sal(:,:) = 0.0
 
     ! do SSH communication needed for PP interactions
-    ! allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
-    allocate(e_ssh(sal_ct%total_ocean_points), source=0.0)
-    ! call ssh_pp_communications(sal_ct, G, eta, e_ssh)
+    allocate(e_ssh(sal_ct%unowned_sources), source=0.0)
+    ! allocate(e_ssh(sal_ct%total_ocean_points), source=0.0)
+    call ssh_pp_communications(sal_ct, G, eta, e_ssh)
     ! call ssh_pp_communications2(sal_ct, G, eta, e_ssh)
 
     ! compute proxy source weights for computational domain
