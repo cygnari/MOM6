@@ -1140,7 +1140,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
             enddo
         enddo
     enddo
-    call cpu_clock_begin(id_clock_SAL_pc_comp)
+    call cpu_clock_end(id_clock_SAL_pc_comp)
 end subroutine pc_interaction_compute
 
 subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
