@@ -1084,7 +1084,6 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
     CS%id_e_sal_y = register_diag_field('ocean_model', 'e_sal_y', diag%axest1, Time, &
         'SAL y derivative', 'meter', conversion=US%Z_to_m)
   endif
-  print *, 'here 0 0 3'
 
   CS%GFS_scale = 1.0
   if (GV%g_prime(1) /= GV%g_Earth) CS%GFS_scale = GV%g_prime(1) / GV%g_Earth
