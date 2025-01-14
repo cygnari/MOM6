@@ -816,7 +816,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     ! compute the interaction lists for the target points in the target domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
-                                    0.7, sal_ct%own_ocean_points)
+                                    0.9, sal_ct%own_ocean_points)
     call sync_PEs()
 
     ! compute communication patterns 
@@ -825,10 +825,10 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
     id_clock_SAL_pc = cpu_clock_id('(Ocean SAL PC interactions)', grain=CLOCK_MODULE)
     id_clock_SAL_pp = cpu_clock_id('(Ocean SAL PP interactions)', grain=CLOCK_MODULE)
-    id_clock_SAL_pc_comm = cpu_clock_id('(Ocean SAL PC interaction communication)', grain=CLOCK_MODULE)
-    id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction computation)', grain=CLOCK_MODULE)
-    id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction communication)', grain=CLOCK_MODULE)
-    id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction computation)', grain=CLOCK_MODULE)
+    id_clock_SAL_pc_comm = cpu_clock_id('(Ocean SAL PC interaction comm)', grain=CLOCK_MODULE)
+    id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction comm)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
     sal_ct%interp_degree=2
 end subroutine sal_conv_init
 
