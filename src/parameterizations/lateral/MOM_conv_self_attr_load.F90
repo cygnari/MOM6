@@ -74,6 +74,10 @@ end type SAL_conv_type
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
 integer :: id_clock_SAL_pc
 integer :: id_clock_SAL_pp
+integer :: id_clock_SAL_pc_comm
+integer :: id_clock_SAL_pc_comp
+integer :: id_clock_SAL_pp_comm
+integer :: id_clock_SAL_pp_comp
 
 contains
 
@@ -821,6 +825,10 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
     id_clock_SAL_pc = cpu_clock_id('(Ocean SAL PC interactions)', grain=CLOCK_MODULE)
     id_clock_SAL_pp = cpu_clock_id('(Ocean SAL PP interactions)', grain=CLOCK_MODULE)
+    id_clock_SAL_pc_comm = cpu_clock_id('(Ocean SAL PC interaction communication)', grain=CLOCK_MODULE)
+    id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction computation)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction communication)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction computation)', grain=CLOCK_MODULE)
     sal_ct%interp_degree=3
 end subroutine sal_conv_init
 
@@ -837,6 +845,8 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
     p = sal_ct%p; id = sal_ct%id
     i_off = G%isg - G%isc; j_off = G%jsg - G%jsc
     rad2 = G%Rad_Earth ** 2
+
+    call cpu_clock_begin(id_clock_SAL_pp_comm)
 
     max_give = 0; max_get = 0
     do i = 1, p
@@ -880,6 +890,8 @@ subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
             e_ssh(count) = points_received(1, j, i)
         enddo
     enddo
+
+    call cpu_clock_end(id_clock_SAL_pp_comm)
 end subroutine ssh_pp_communications
 
 subroutine bli_coeffs(coeffs, degree)
@@ -1007,6 +1019,8 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
     ic = iec-isc+1; jc = jec-jsc+1
     r2 = G%Rad_Earth ** 2
 
+    call cpu_clock_begin(id_clock_SAL_pc_comp)
+
     do i = 1, sal_ct%own_ocean_points
         ii = sal_ct%one_d_to_2d_i(i)
         ij = sal_ct%one_d_to_2d_j(i)
@@ -1041,7 +1055,11 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
         enddo panelloop2
     enddo
 
+    call cpu_clock_end(id_clock_SAL_pc_comp)
+
+    call cpu_clock_begin(id_clock_SAL_pc_comm)
     call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
+    call cpu_clock_end(id_clock_SAL_pc_comm)
 end subroutine proxy_source_compute
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore impact of eps and cons more
@@ -1088,6 +1106,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
 
     id = PE_here()
 
+    call cpu_clock_begin(id_clock_SAL_pc_comp)
     proxy_count = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
     allocate(source_proxy_weights(proxy_count), source=0.0)
     do i = 1, size(sal_ct%pc_interactions)
@@ -1121,6 +1140,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
             enddo
         enddo
     enddo
+    call cpu_clock_begin(id_clock_SAL_pc_comp)
 end subroutine pc_interaction_compute
 
 subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
@@ -1136,6 +1156,8 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
     isc = G%isc; jsc = G%jsc; iec = G%iec; jec = G%jec
+
+    call cpu_clock_begin(id_clock_SAL_pp_comp)
 
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
@@ -1173,6 +1195,7 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
         enddo
     enddo
+    call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute
 
 subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
