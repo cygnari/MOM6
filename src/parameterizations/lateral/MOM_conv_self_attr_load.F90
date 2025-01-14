@@ -807,7 +807,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 40, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 30, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
@@ -829,7 +829,7 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction computation)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction communication)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction computation)', grain=CLOCK_MODULE)
-    sal_ct%interp_degree=3
+    sal_ct%interp_degree=2
 end subroutine sal_conv_init
 
 subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
