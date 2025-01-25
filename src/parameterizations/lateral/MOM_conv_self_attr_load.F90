@@ -22,10 +22,6 @@ type, private :: cube_panel
     integer :: id
     integer :: parent_panel = -1
     integer, allocatable :: child_panels(:)
-    integer :: child_panel_1 = -1
-    integer :: child_panel_2 = -1
-    integer :: child_panel_3 = -1
-    integer :: child_panel_4 = -1
     integer :: child_panel_count = 0
     integer :: face 
     real :: min_xi ! xi and eta are the angle coordinates on the face of the cube
@@ -405,18 +401,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels(i)%min_eta = min_eta-1e-16
         tree_panels(i)%max_eta = max_eta+1e-16
         tree_panels(i)%mid_eta = mid_eta
-        if (tree_panels(i)%child_panel_count > 0) then
-            tree_panels(i)%child_panel_1 = tree_panels(i)%child_panels(1)
-        endif
-        if (tree_panels(i)%child_panel_count > 1) then
-            tree_panels(i)%child_panel_2 = tree_panels(i)%child_panels(2)
-        endif
-        if (tree_panels(i)%child_panel_count > 2) then
-            tree_panels(i)%child_panel_3 = tree_panels(i)%child_panels(3)
-        endif
-        if (tree_panels(i)%child_panel_count > 3) then
-            tree_panels(i)%child_panel_4= tree_panels(i)%child_panels(4)
-        endif
         ! compute the furthest distance from panel center to vertex for each panel
         call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
         call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
@@ -457,7 +441,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
                 if (tree_panels(j)%is_leaf) then
                     exit jloop
                 else
-                    j = tree_panels(j)%child_panel_1
+                    j = tree_panels(j)%child_panels(1)
                 endif
             ELSE
                 j = j + 1
@@ -728,7 +712,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                     if (sal_ct%tree_struct(j)%is_leaf) then
                         exit treeloop
                     else
-                        j = sal_ct%tree_struct(j)%child_panel_1
+                        j = sal_ct%tree_struct(j)%child_panels(1)
                     endif
                 else
                     j = j + 1
