@@ -76,7 +76,6 @@ integer :: id_clock_SAL_pc_comm
 integer :: id_clock_SAL_pc_comp
 integer :: id_clock_SAL_pp_comm
 integer :: id_clock_SAL_pp_comp
-integer :: id_clock_SAL_gfunc
 
 contains
 
@@ -845,7 +844,6 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction comm)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
-    id_clock_SAL_gfunc = cpu_clock_id('(Ocean SAL gfunc', grain=CLOCK_MODULE)
     sal_ct%interp_degree=2
 end subroutine sal_conv_init
 
@@ -1090,8 +1088,6 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     ! cons1 = 0.0
     eps=1e-4
 
-    call cpu_clock_begin(id_clock_SAL_gfunc)
-
     sal_x = 0.0
     sal_y = 0.0
     ! sal = 0.0
@@ -1107,8 +1103,6 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
         sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
         sal_x = (tx*sy-ty*sx)*mp2iv
     END IF
-
-    call cpu_clock_end(id_clock_SAL_gfunc)
 end subroutine sal_grad_gfunc
 
 subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, sal_y)
