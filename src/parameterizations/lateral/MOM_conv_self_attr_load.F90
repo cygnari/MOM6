@@ -21,10 +21,6 @@ type, private :: cube_panel
     logical :: is_leaf = .true. ! all leaves start out as leaves, become not leaf when refined
     integer :: id
     integer :: parent_panel = -1
-    ! integer :: child_panel_1 = -1
-    ! integer :: child_panel_2 = -1
-    ! integer :: child_panel_3 = -1
-    ! integer :: child_panel_4 = -1
     integer, allocatable :: child_panels(:)
     integer :: child_panel_count = 0
     integer :: face 
@@ -508,10 +504,6 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
                         do j = 1, tree_panels(i_s)%child_panel_count
                             source_index(tt_count+j) = tree_panels(i_s)%child_panels(j)
                         enddo
-                        ! source_index(tt_count+1) = tree_panels(i_s)%child_panels(1)
-                        ! source_index(tt_count+2) = tree_panels(i_s)%child_panels(2)
-                        ! source_index(tt_count+3) = tree_panels(i_s)%child_panels(3)
-                        ! source_index(tt_count+4) = tree_panels(i_s)%child_panels(4)
                         tt_count = tt_count + tree_panels(i_s)%child_panel_count
                     end if
                 end if
@@ -641,12 +633,10 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     do i = 1,p
         call send_to_PE(points_needed_from_proc(i), i-1)
-        ! print *, id, ' needs ', points_needed_from_proc(i), ' from proc ', i-1
     enddo
 
     do i = 1,p
         call recv_from_PE(points_to_give_proc(i), i-1)
-        ! print *, id, ' sends ', points_to_give_proc(i), ' to proc ', i-1
     enddo
 
     call sync_PEs()
@@ -658,17 +648,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
 
     allocate(points_to_give_proc_index(max_p, p), source=-1)
     allocate(points_to_give_proc_2d(1, max_p, p), source=-1)
-
-    ! do i=0, p-1
-    !     call sync_PEs()
-    !     if (id == i) then
-    !         print *, id, ' needs points: '
-    !         do j = 1, points_needed_from_proc(p-id)
-    !             print *, points_from_proc_2d(1,j,p-id)
-    !         enddo
-    !         print *, '-------------------------'
-    !     endif
-    ! enddo
 
     do i=0, p-1 ! send point indices
         if (points_needed_from_proc(i+1)>0) then
@@ -682,17 +661,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         endif
     enddo
 
-    ! do i=0, p-1
-    !     call sync_PEs()
-    !     if (id == i) then
-    !         print *, id, ' sends points: '
-    !         do j = 1, points_to_give_proc(p-id)
-    !             print *, points_to_give_proc_2d(1,j,p-id)
-    !         enddo
-    !         print *, '-------------------------'
-    !     endif
-    ! enddo
-
     call sync_PEs()
     do i = 1,p
         if (points_to_give_proc(i)>0) then
@@ -703,17 +671,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             enddo
         endif
     enddo
-
-    ! do i=0, p-1
-    !     call sync_PEs()
-    !     if (id == i) then
-    !         print *, id, ' sends points: '
-    !         do j = 1, points_to_give_proc(p-id)
-    !             print *, points_to_give_proc_index(j,p-id)
-    !         enddo
-    !         print *, '-------------------------'
-    !     endif
-    ! enddo
 
     sal_ct%points_to_give = points_to_give_proc_index
     sal_ct%points_to_give_proc = points_to_give_proc
@@ -792,10 +749,6 @@ subroutine sal_conv_init(sal_ct, G)
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
-    ! ig_off = G%idg_offset+isg-isd
-    ! jg_off = G%jdg_offset+jsg-jsd
-    ! isg = isc+ig_off; ieg = iec+ig_off; jsg = jsc+jg_off; jeg = jec+jg_off
-    ! call get_global_grid_size(G, imax, jmax) ! total size in i/k directions
 
     ic=iec-isc+1; jc=jec-jsc+1
 
