@@ -21,10 +21,12 @@ type, private :: cube_panel
     logical :: is_leaf = .true. ! all leaves start out as leaves, become not leaf when refined
     integer :: id
     integer :: parent_panel = -1
-    integer :: child_panel_1 = -1
-    integer :: child_panel_2 = -1
-    integer :: child_panel_3 = -1
-    integer :: child_panel_4 = -1
+    ! integer :: child_panel_1 = -1
+    ! integer :: child_panel_2 = -1
+    ! integer :: child_panel_3 = -1
+    ! integer :: child_panel_4 = -1
+    integer, allocatable :: child_panels(:)
+    integer :: child_panel_count = 0
     integer :: face 
     real :: min_xi ! xi and eta are the angle coordinates on the face of the cube
     real :: mid_xi ! based on the equiangular gnomonic cubed sphere
@@ -78,6 +80,7 @@ integer :: id_clock_SAL_pc_comm
 integer :: id_clock_SAL_pc_comp
 integer :: id_clock_SAL_pp_comm
 integer :: id_clock_SAL_pp_comp
+integer :: id_clock_SAL_gfunc
 
 contains
 
@@ -202,51 +205,67 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     integer, intent(in) :: cluster_thresh, point_count
     real, intent(in) :: xg(:), yg(:), zg(:)
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
-    integer, allocatable :: curr_loc(:), temp(:)
+    integer, allocatable :: curr_loc(:), temp(:), point_panel(:), panel_points(:), face_id(:), panel_id(:)
     integer :: face, i, panel_count, j, count, index, k
-    integer :: which_panel, total
+    integer :: which_panel, total, loc, kids
     real :: x1, x2, x3, y1, y2, y3, d1, d2, d3, d4
+    real, allocatable :: point_xi(:), point_eta(:)
 
     pi = 4.D0*DATAN(1.D0)
     allocate(tree_panels_temp(max(6, point_count)))
-    allocate(curr_loc(6))
+    allocate(point_panel(point_count), source=0)
+    allocate(panel_points(6), source=0)
+    allocate(face_id(6), source=-1)
+    allocate(point_xi(point_count))
+    allocate(point_eta(point_count))
 
-    ! initialize the six top level cube panels
-    do i = 1, 6
-        tree_panels_temp(i)%id = i
-        tree_panels_temp(i)%face = i
-        tree_panels_temp(i)%min_xi = -pi/4.D0
-        tree_panels_temp(i)%mid_xi = 0.D0
-        tree_panels_temp(i)%max_xi = pi/4.D0
-        tree_panels_temp(i)%min_eta = -pi/4.D0
-        tree_panels_temp(i)%mid_eta = 0.D0
-        tree_panels_temp(i)%max_eta = pi/4.D0
-        allocate(tree_panels_temp(i)%points_inside(point_count))
-        tree_panels_temp(i)%panel_point_count = 0
-        curr_loc(i) = 0
-    enddo
-
+    ! find the top level panels of all the points
     do i = 1, point_count
         xval = xg(i)
         yval = yg(i)
         zval = zg(i)
         face = face_from_xyz(xval, yval, zval)
-        curr_loc(face) = curr_loc(face) + 1
-        tree_panels_temp(face)%panel_point_count = tree_panels_temp(face)%panel_point_count + 1
-        tree_panels_temp(face)%points_inside(curr_loc(face)) = i
+        point_panel(i) = face
+        panel_points(face) = panel_points(face) + 1
+        call xieta_from_xyz(xval, yval, zval, xi, eta, face)
+        point_xi(i) = xi
+        point_eta(i) = eta
     enddo
 
+    ! initialize the six top level cube panels
+    loc = 0
     do i = 1, 6
-        allocate(temp(curr_loc(i)))
-        do j = 1, tree_panels_temp(i)%panel_point_count
-            temp(j) = tree_panels_temp(i)%points_inside(j)
-        enddo
-        call move_alloc(from=temp, to=tree_panels_temp(i)%points_inside)
-        curr_loc(i) = 0
+        if (panel_points(i) > 0) then
+            loc = loc + 1
+            tree_panels_temp(i)%id = loc
+            tree_panels_temp(i)%face = i
+            tree_panels_temp(i)%min_xi = -pi/4.D0
+            tree_panels_temp(i)%mid_xi = 0.D0
+            tree_panels_temp(i)%max_xi = pi/4.D0
+            tree_panels_temp(i)%min_eta = -pi/4.D0
+            tree_panels_temp(i)%mid_eta = 0.D0
+            tree_panels_temp(i)%max_eta = pi/4.D0
+            allocate(tree_panels_temp(i)%points_inside(panel_points(i)))
+            tree_panels_temp(i)%panel_point_count = panel_points(i)
+            face_id(i) = loc
+        endif
+    enddo
+
+    panel_count = loc
+
+    allocate(curr_loc(6), source=0)
+
+    do i = 1, point_count
+        face = point_panel(i)
+        loc = face_id(face)
+        curr_loc(loc) = curr_loc(loc) + 1
+        tree_panels_temp(loc)%points_inside(curr_loc(loc)) = i
     enddo
 
     i = 1
-    panel_count = 6
+    deallocate(panel_points)
+    allocate(panel_points(4), source=0)
+    allocate(panel_id(4), source=-1)
     do while (i <= panel_count)
         ! first check if panel needs to be divided
         count = tree_panels_temp(i)%panel_point_count
@@ -259,44 +278,9 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
             min_eta = tree_panels_temp(i)%min_eta
             mid_eta = tree_panels_temp(i)%mid_eta
             max_eta = tree_panels_temp(i)%max_eta
-            ! four new panels are index panel_count+1 through panel_count+4
-            DO j = 1, 4
-                index = panel_count+j
-                tree_panels_temp(panel_count+j)%parent_panel = i
-                tree_panels_temp(panel_count+j)%level = tree_panels_temp(i)%level + 1
-                tree_panels_temp(panel_count+j)%face = tree_panels_temp(i)%face
-                tree_panels_temp(panel_count+j)%id = panel_count+j
-                allocate(tree_panels_temp(index)%points_inside(count))
-            END DO
-            ! coordinates of four new panels in angle space
-            tree_panels_temp(panel_count+1)%min_xi = min_xi; tree_panels_temp(panel_count+1)%min_eta = min_eta
-            tree_panels_temp(panel_count+1)%max_xi = mid_xi; tree_panels_temp(panel_count+1)%max_eta = mid_eta
-            tree_panels_temp(panel_count+1)%mid_xi = 0.5*(min_xi+mid_xi)
-            tree_panels_temp(panel_count+1)%mid_eta = 0.5*(min_eta+mid_eta)
-
-            tree_panels_temp(panel_count+2)%min_xi = mid_xi; tree_panels_temp(panel_count+2)%min_eta = min_eta
-            tree_panels_temp(panel_count+2)%max_xi = max_xi; tree_panels_temp(panel_count+2)%max_eta = mid_eta
-            tree_panels_temp(panel_count+2)%mid_xi = 0.5*(mid_xi+max_xi)
-            tree_panels_temp(panel_count+2)%mid_eta = 0.5*(min_eta+mid_eta)
-
-            tree_panels_temp(panel_count+3)%min_xi = mid_xi; tree_panels_temp(panel_count+3)%min_eta = mid_eta
-            tree_panels_temp(panel_count+3)%max_xi = max_xi; tree_panels_temp(panel_count+3)%max_eta = max_eta
-            tree_panels_temp(panel_count+3)%mid_xi = 0.5*(mid_xi+max_xi)
-            tree_panels_temp(panel_count+3)%mid_eta = 0.5*(mid_eta+max_eta)
-
-            tree_panels_temp(panel_count+4)%min_xi = min_xi; tree_panels_temp(panel_count+4)%min_eta = mid_eta
-            tree_panels_temp(panel_count+4)%max_xi = mid_xi; tree_panels_temp(panel_count+4)%max_eta = max_eta
-            tree_panels_temp(panel_count+4)%mid_xi = 0.5*(min_xi+mid_xi)
-            tree_panels_temp(panel_count+4)%mid_eta = 0.5*(mid_eta+max_eta)
-
-            tree_panels_temp(i)%child_panel_1 = panel_count+1
-            tree_panels_temp(i)%child_panel_2 = panel_count+2
-            tree_panels_temp(i)%child_panel_3 = panel_count+3
-            tree_panels_temp(i)%child_panel_4 = panel_count+4
-
-            curr_loc(:) = 0
-            DO j = 1, tree_panels_temp(i)%panel_point_count
-                ! loop through points contained in parent panel, assign to sub panels
+            ! check where the points are
+            panel_points(:) = 0
+            do j = 1, tree_panels_temp(i)%panel_point_count
                 index = tree_panels_temp(i)%points_inside(j)
                 xval = xg(index); yval = yg(index); zval = zg(index)
                 call xieta_from_xyz(xval, yval, zval, xi, eta, tree_panels_temp(i)%face)
@@ -313,46 +297,114 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
                         which_panel = 3
                     END IF
                 END IF
-                curr_loc(which_panel) = curr_loc(which_panel) + 1
-                tree_panels_temp(panel_count+which_panel)%panel_point_count = & 
-                                            tree_panels_temp(panel_count+which_panel)%panel_point_count + 1
-                tree_panels_temp(panel_count+which_panel)%points_inside(curr_loc(which_panel)) = index
-            END DO
+                panel_points(which_panel) = panel_points(which_panel) + 1
+                point_panel(j) = which_panel
+            enddo
+            kids = 0
+            do j = 1, 4
+                if (panel_points(j) > 0) then
+                    kids = kids + 1
+                endif
+            enddo
+            ! up to four new panels are index panel_count+1 through panel_count+4
+            loc = 0
+            panel_id(:) = -1
+            do j = 1, 4
+                if (panel_points(j) > 0) then
+                    loc = loc + 1
+                    index = panel_count + loc
+                    panel_id(j) = loc
+                    count = panel_points(j)
+                    tree_panels_temp(index)%parent_panel = i
+                    tree_panels_temp(index)%level = tree_panels_temp(i)%level + 1
+                    tree_panels_temp(index)%face = tree_panels_temp(i)%face
+                    tree_panels_temp(index)%id = index
+                    allocate(tree_panels_temp(index)%points_inside(count))
+                    tree_panels_temp(index)%panel_point_count = count
+                    ! coordinates of four new panels in angle space
+                    if (j == 1) then
+                        tree_panels_temp(index)%min_xi = min_xi; tree_panels_temp(index)%min_eta = min_eta
+                        tree_panels_temp(index)%max_xi = mid_xi; tree_panels_temp(index)%max_eta = mid_eta
+                        tree_panels_temp(index)%mid_xi = 0.5*(min_xi+mid_xi)
+                        tree_panels_temp(index)%mid_eta = 0.5*(min_eta+mid_eta)
+                    endif
+                    if (j == 2) then
+                        tree_panels_temp(index)%min_xi = mid_xi; tree_panels_temp(index)%min_eta = min_eta
+                        tree_panels_temp(index)%max_xi = max_xi; tree_panels_temp(index)%max_eta = mid_eta
+                        tree_panels_temp(index)%mid_xi = 0.5*(mid_xi+max_xi)
+                        tree_panels_temp(index)%mid_eta = 0.5*(min_eta+mid_eta)
+                    endif
+                    if (j == 3) then
+                        tree_panels_temp(index)%min_xi = mid_xi; tree_panels_temp(index)%min_eta = mid_eta
+                        tree_panels_temp(index)%max_xi = max_xi; tree_panels_temp(index)%max_eta = max_eta
+                        tree_panels_temp(index)%mid_xi = 0.5*(mid_xi+max_xi)
+                        tree_panels_temp(index)%mid_eta = 0.5*(mid_eta+max_eta)
+                    endif
+                    if (j == 4) then
+                        tree_panels_temp(index)%min_xi = min_xi; tree_panels_temp(index)%min_eta = mid_eta
+                        tree_panels_temp(index)%max_xi = mid_xi; tree_panels_temp(index)%max_eta = max_eta
+                        tree_panels_temp(index)%mid_xi = 0.5*(min_xi+mid_xi)
+                        tree_panels_temp(index)%mid_eta = 0.5*(mid_eta+max_eta)
+                    endif
+                endif
+            enddo
 
-            ! resize points_inside array
-            DO j = 1, 4
-                allocate(temp(curr_loc(j)))
-                DO k = 1, tree_panels_temp(panel_count+j)%panel_point_count
-                    temp(k) = tree_panels_temp(panel_count+j)%points_inside(k)
-                END DO
-                call move_alloc(from=temp, to=tree_panels_temp(panel_count+j)%points_inside)
-                curr_loc(j) = 0
+            tree_panels_temp(i)%child_panel_count = kids
+            allocate(tree_panels_temp(i)%child_panels(kids), source=-1)
+            do j = 1, kids
+                tree_panels_temp(i)%child_panels(j) = panel_count+j
+            enddo
+
+            curr_loc(:) = 0
+            DO j = 1, tree_panels_temp(i)%panel_point_count      
+                which_panel = point_panel(j)
+                loc = panel_id(which_panel)         
+                curr_loc(loc) = curr_loc(loc) + 1
+                tree_panels_temp(panel_count+loc)%points_inside(curr_loc(loc)) = tree_panels_temp(i)%points_inside(j)
             END DO
 
             ! sanity check to make sure all points are assigned
-            total = tree_panels_temp(panel_count+1)%panel_point_count
-            total = total + tree_panels_temp(panel_count+2)%panel_point_count
-            total = total + tree_panels_temp(panel_count+3)%panel_point_count
-            total = total + tree_panels_temp(panel_count+4)%panel_point_count
+            total = 0
+            do j = 1, kids
+                total = total + tree_panels_temp(panel_count+j)%panel_point_count
+            enddo
             IF (total /= tree_panels_temp(i)%panel_point_count) THEN
                 print *, 'Error in refining tree at parent panel ', i
             END IF
-            panel_count = panel_count + 4
+            panel_count = panel_count + tree_panels_temp(i)%child_panel_count
         END IF
         i = i + 1
     enddo
 
     ! tree_panels_temp is the wrong size so move everything over to the correctly sized tree_panels
     allocate(tree_panels(panel_count))
-    DO i = 1, panel_count
+    do i = 1, panel_count
         tree_panels(i) = tree_panels_temp(i)
         tree_panels(i)%relabeled_points_inside = tree_panels(i)%points_inside
-        min_xi = tree_panels(i)%min_xi
-        mid_xi = tree_panels(i)%mid_xi
-        max_xi = tree_panels(i)%max_xi
-        min_eta = tree_panels(i)%min_eta
-        mid_eta = tree_panels(i)%mid_eta
-        max_eta = tree_panels(i)%max_eta
+    enddo
+
+    ! shrink each panel to the points contained inside
+    do i = 1, panel_count
+        loc = tree_panels(i)%points_inside(1)
+        min_xi = point_xi(loc)
+        max_xi = point_xi(loc)
+        min_eta = point_eta(loc)
+        max_eta = point_eta(loc)
+        do j = 1, tree_panels(i)%panel_point_count
+            loc = tree_panels(i)%points_inside(j)
+            min_xi = min(min_xi, point_xi(loc))
+            max_xi = max(max_xi, point_xi(loc))
+            min_eta = min(min_eta, point_eta(loc))
+            max_eta = max(max_eta, point_eta(loc))
+        enddo
+        mid_xi = 0.5*(min_xi+max_xi)
+        mid_eta = 0.5*(min_eta+max_eta)
+        tree_panels(i)%min_xi = min_xi-1e-16
+        tree_panels(i)%max_xi = max_xi+1e-16
+        tree_panels(i)%mid_xi = mid_xi
+        tree_panels(i)%min_eta = min_eta-1e-16
+        tree_panels(i)%max_eta = max_eta+1e-16
+        tree_panels(i)%mid_eta = mid_eta
         ! compute the furthest distance from panel center to vertex for each panel
         call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
         call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
@@ -364,7 +416,7 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         call xyz_from_xieta(y1, y2, y3, max_xi, min_eta, tree_panels(i)%face)
         d4 = ACOS(MAX(MIN(x1*y1+x2*y2+x3*y3, 1.0_8), -1.0_8))
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
-    END DO
+    enddo
 end subroutine tree_traversal
 
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
@@ -390,7 +442,11 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
                 ! point i is contained in panel j
                 points_panels(level, i) = j
                 level = level + 1
-                j = tree_panels(j)%child_panel_1
+                if (tree_panels(j)%is_leaf) then
+                    exit jloop
+                else
+                    j = tree_panels(j)%child_panels(1)
+                endif
             ELSE
                 j = j + 1
             END IF
@@ -449,11 +505,14 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
                         interaction_lists_temp(interaction_count)%index_source = i_s
                         interaction_lists_temp(interaction_count)%interact_type = 0
                     else ! refine source panel
-                        source_index(tt_count+1) = tree_panels(i_s)%child_panel_1
-                        source_index(tt_count+2) = tree_panels(i_s)%child_panel_2
-                        source_index(tt_count+3) = tree_panels(i_s)%child_panel_3
-                        source_index(tt_count+4) = tree_panels(i_s)%child_panel_4
-                        tt_count = tt_count + 4
+                        do j = 1, tree_panels(i_s)%child_panel_count
+                            source_index(tt_count+j) = tree_panels(i_s)%child_panels(j)
+                        enddo
+                        ! source_index(tt_count+1) = tree_panels(i_s)%child_panels(1)
+                        ! source_index(tt_count+2) = tree_panels(i_s)%child_panels(2)
+                        ! source_index(tt_count+3) = tree_panels(i_s)%child_panels(3)
+                        ! source_index(tt_count+4) = tree_panels(i_s)%child_panels(4)
+                        tt_count = tt_count + tree_panels(i_s)%child_panel_count
                     end if
                 end if
             end if
@@ -693,7 +752,11 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                     end if
                 enddo kloop3
                 if (found) then
-                    j = sal_ct%tree_struct(j)%child_panel_1
+                    if (sal_ct%tree_struct(j)%is_leaf) then
+                        exit treeloop
+                    else
+                        j = sal_ct%tree_struct(j)%child_panels(1)
+                    endif
                 else
                     j = j + 1
                 end if
@@ -829,6 +892,7 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction comm)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
+    id_clock_SAL_gfunc = cpu_clock_id('(Ocean SAL gfunc', grain=CLOCK_MODULE)
     sal_ct%interp_degree=2
 end subroutine sal_conv_init
 
@@ -1073,6 +1137,8 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore i
     ! cons1 = 0.0
     eps=1e-4
 
+    call cpu_clock_begin(id_clock_SAL_gfunc)
+
     sal_x = 0.0
     sal_y = 0.0
     sal = 0.0
@@ -1087,8 +1153,10 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore i
         mp2 = sqrt(1.0-x32)
         sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
         sal_x = (tx*sy-ty*sx)/mp2*val
-        sal = cons1*((1.0-6.21196)/(sqp+eps)+(2.7+6.0)*log(2*sqp+mp+eps))
+        ! sal = cons1*((1.0-6.21196)/(sqp+eps)+(2.7+6.0)*log(2*sqp+mp+eps))
     END IF
+
+    call cpu_clock_end(id_clock_SAL_gfunc)
 end subroutine sal_grad_gfunc
 
 subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, sal_y)
@@ -1134,7 +1202,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
                 call xyz_from_xieta(cx, cy, cz, xi, eta, sal_ct%tree_struct(i_s)%face)
                 call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_val, sal_grad_x, sal_grad_y)
                 offset = offset+1
-                sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
+                ! sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
             enddo
