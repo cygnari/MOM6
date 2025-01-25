@@ -22,6 +22,10 @@ type, private :: cube_panel
     integer :: id
     integer :: parent_panel = -1
     integer, allocatable :: child_panels(:)
+    integer :: child_panel_1 = -1
+    integer :: child_panel_2 = -1
+    integer :: child_panel_3 = -1
+    integer :: child_panel_4 = -1
     integer :: child_panel_count = 0
     integer :: face 
     real :: min_xi ! xi and eta are the angle coordinates on the face of the cube
@@ -401,6 +405,18 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels(i)%min_eta = min_eta-1e-16
         tree_panels(i)%max_eta = max_eta+1e-16
         tree_panels(i)%mid_eta = mid_eta
+        if (tree_panels(i)%child_panel_count > 0) then
+            tree_panels(i)%child_panel_1 = tree_panels(i)%child_panels(1)
+        endif
+        if (tree_panels(i)%child_panel_count > 1) then
+            tree_panels(i)%child_panel_2 = tree_panels(i)%child_panels(2)
+        endif
+        if (tree_panels(i)%child_panel_count > 2) then
+            tree_panels(i)%child_panel_3 = tree_panels(i)%child_panels(3)
+        endif
+        if (tree_panels(i)%child_panel_count > 3) then
+            tree_panels(i)%child_panel_4= tree_panels(i)%child_panels(4)
+        endif
         ! compute the furthest distance from panel center to vertex for each panel
         call xyz_from_xieta(x1, x2, x3, mid_xi, mid_eta, tree_panels(i)%face)
         call xyz_from_xieta(y1, y2, y3, min_xi, min_eta, tree_panels(i)%face)
@@ -441,7 +457,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
                 if (tree_panels(j)%is_leaf) then
                     exit jloop
                 else
-                    j = tree_panels(j)%child_panels(1)
+                    j = tree_panels(j)%child_panel_1
                 endif
             ELSE
                 j = j + 1
@@ -712,7 +728,7 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
                     if (sal_ct%tree_struct(j)%is_leaf) then
                         exit treeloop
                     else
-                        j = sal_ct%tree_struct(j)%child_panels(1)
+                        j = sal_ct%tree_struct(j)%child_panel_1
                     endif
                 else
                     j = j + 1
@@ -1079,10 +1095,10 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
     call cpu_clock_end(id_clock_SAL_pc_comm)
 end subroutine proxy_source_compute
 
-subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore impact of eps and cons more
+subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact of eps and cons more
     real, intent(in) :: tx, ty, tz, sx, sy, sz
-    real, intent(out) :: sal_x, sal_y, sal
-    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32, val, mp2, cons1, eps
+    real, intent(out) :: sal_x, sal_y
+    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, val, mp2iv, cons1, eps
 
     cons = -7.029770573725803e-9/3.0 ! modify this
     ! cons = 0.0
@@ -1094,7 +1110,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore i
 
     sal_x = 0.0
     sal_y = 0.0
-    sal = 0.0
+    ! sal = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
         mp = 2.0-2.0*g
@@ -1102,11 +1118,10 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal, sal_x, sal_y) ! explore i
         p1 = (1.0-6.21196)/(sqp*mp+eps)
         p2 = (2.7+6.0)*(2*g+sqp) / (2.0*(g*g-1.0)+eps)
         val = (p1+p2)*cons ! modify this
-        x32 = tz*tz
-        mp2 = sqrt(1.0-x32)
-        sal_y = (sz*(1.0-x32)-tz*(tx*sx+ty*sy))/mp2*val
-        sal_x = (tx*sy-ty*sx)/mp2*val
-        ! sal = cons1*((1.0-6.21196)/(sqp+eps)+(2.7+6.0)*log(2*sqp+mp+eps))
+        x32m = 1.0-tz*tz
+        mp2iv = val/sqrt(x32m)
+        sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
+        sal_x = (tx*sy-ty*sx)*mp2iv
     END IF
 
     call cpu_clock_end(id_clock_SAL_gfunc)
@@ -1153,7 +1168,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal, sal_x, s
             do j = 1, sal_ct%interp_degree+1
                 xi = cheb_xi(j)
                 call xyz_from_xieta(cx, cy, cz, xi, eta, sal_ct%tree_struct(i_s)%face)
-                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_val, sal_grad_x, sal_grad_y)
+                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y)
                 offset = offset+1
                 ! sal(i_ti, i_tj) = sal(i_ti, i_tj) + sal_val*source_proxy_weights(offset)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset)
@@ -1210,8 +1225,8 @@ subroutine pp_interaction_compute(sal_ct, G, eta, sal, sal_x, sal_y, e_ssh)
                 sz = cos(colat)
                 ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
             end if
-            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_val, sal_grad_x, sal_grad_y)
-            sal(i_ti, i_tj) = sal(i_ti, i_tj)+sal_val*ssh
+            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
+            ! sal(i_ti, i_tj) = sal(i_ti, i_tj)+sal_val*ssh
             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
         enddo
