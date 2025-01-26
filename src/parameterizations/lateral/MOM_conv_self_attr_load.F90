@@ -67,6 +67,7 @@ type, public :: SAL_conv_type ; private
     integer, allocatable :: one_d_to_2d_i(:), one_d_to_2d_j(:)
     integer :: own_ocean_points
     integer :: total_ocean_points
+    integer, allocatable :: point_leaf_panel(:) ! which leaf panel contains point i
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
@@ -414,18 +415,20 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     enddo
 end subroutine tree_traversal
 
-subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
+subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs, point_leaf_panel)
     ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
     type(ocean_grid_type), intent(in) :: G
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:), y(:), z(:)
     integer, intent(in) :: levs
     integer, intent(inout) :: points_panels(:,:)
+    integer, intent(out), allocatable :: point_leaf_panel(:)
     integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
     real :: xco, yco, zco
 
     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
     ic = iec-isc+1; jc = jec-jsc+1
+    allocate(point_leaf_panel(size(x)))
 
     DO i = 1, size(x)
         level = 1
@@ -436,6 +439,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs)
             ELSE IF (tree_panels(j)%contains_point(x(i), y(i), z(i))) THEN
                 ! point i is contained in panel j
                 points_panels(level, i) = j
+                point_leaf_panel(i) = j
                 level = level + 1
                 if (tree_panels(j)%is_leaf) then
                     exit jloop
@@ -827,7 +831,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
     ! finds which panels contain the computational domain points
-    call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level) 
+    call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level, sal_ct%point_leaf_panel) 
 
     ! compute the interaction lists for the target points in the target domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
@@ -1017,6 +1021,91 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
         enddo
     enddo
 end subroutine interp_vals_bli
+
+subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights) 
+    type(SAL_conv_type), intent(in) :: sal_ct
+    real, intent(in) :: sshs(:,:)
+    real, intent(inout) :: proxy_source_weights(:)
+    type(ocean_grid_type), intent(in) :: G
+    real :: pi, r2, lat, lon, colat, x, y, z, a, ssh, min_xi, max_xi, min_eta, max_eta, xi, eta
+    real :: min_xi_p, max_xi_p, min_eta_p, max_eta_p
+    integer :: isc, iec, jsc, jec, ic, jc, i, ii, ij, leaf_i, shift, j, k, parent_i, shift1, offset, l, m
+    real, allocatable :: basis_vals(:,:), xi_vals(:), eta_vals(:)
+
+    pi = 4.0*DATAN(1.0)
+    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+    ic = iec-isc+1; jc = jec-jsc+1
+    r2 = G%Rad_Earth ** 2
+
+    call cpu_clock_begin(id_clock_SAL_pc_comp)
+
+    ! calculate proxy source potentials for leaf panels
+    do i = 1, sal_ct%own_ocean_points
+        ii = sal_ct%one_d_to_2d_i(i)
+        ij = sal_ct%one_d_to_2d_j(i)
+        lat = G%geoLatT(ii, ij)*pi/180.0
+        lon = G%geoLonT(ii, ij)*pi/180.0
+        colat = 0.5*pi-lat
+        x = sin(colat)*cos(lon)
+        y = sin(colat)*sin(lon)
+        z = cos(colat)
+        a = G%areaT(ii, ij)/r2
+        ssh = sshs(ii, ij)
+        leaf_i = sal_ct%point_leaf_panel(i)
+        shift = (leaf_i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+        min_xi = sal_ct%tree_struct(leaf_i)%min_xi
+        max_xi = sal_ct%tree_struct(leaf_i)%max_xi
+        min_eta = sal_ct%tree_struct(leaf_i)%min_eta
+        max_eta = sal_ct%tree_struct(leaf_i)%max_eta
+        call xieta_from_xyz(x, y, z, xi, eta, sal_ct%tree_struct(leaf_i)%face)
+        call interp_vals_bli(basis_vals, xi, eta, min_xi, max_xi, min_eta, max_eta, sal_ct%interp_degree)
+        offset = 0
+        do j = 1, sal_ct%interp_degree+1
+            do k= 1, sal_ct%interp_degree+1
+                offset=offset+1
+                proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(k, j)*ssh*a
+            enddo
+        enddo
+    enddo
+
+    ! upward pass to interpolate from child to parent panel proxy source potentials
+    do i = size(sal_ct%tree_struct), 1, -1
+        parent_i = sal_ct%tree_struct(i)%parent_panel
+        if (parent_i > 0) then
+            min_xi = sal_ct%tree_struct(i)%min_xi
+            max_xi = sal_ct%tree_struct(i)%max_xi
+            min_eta = sal_ct%tree_struct(i)%min_eta
+            max_eta = sal_ct%tree_struct(i)%max_eta
+            call bli_interp_points_shift(xi_vals, min_xi, max_xi, sal_ct%interp_degree)
+            call bli_interp_points_shift(eta_vals, min_eta, max_eta, sal_ct%interp_degree)
+            ! loop over proxy source points in child panel
+            min_xi_p = sal_ct%tree_struct(parent_i)%min_xi
+            max_xi_p = sal_ct%tree_struct(parent_i)%max_xi
+            min_eta_p = sal_ct%tree_struct(parent_i)%min_eta
+            max_eta_p = sal_ct%tree_struct(parent_i)%max_eta
+            shift = (parent_i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+            shift1 = (i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+            do j = 1, sal_ct%interp_degree+1
+                do k = 1, sal_ct%interp_degree+1
+                    call interp_vals_bli(basis_vals, xi_vals(k), eta_vals(j), min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+                    offset = 0
+                    do l = 1, sal_ct%interp_degree+1
+                        do m = 1, sal_ct%interp_degree+1
+                            offset = offset+1
+                            proxy_source_weights(shift+offset) = proxy_source_weights(shift+offset)+basis_vals(m,l)*proxy_source_weights(shift1+offset)
+                        enddo
+                    enddo
+                enddo
+            enddo
+        endif
+    enddo
+
+    call cpu_clock_end(id_clock_SAL_pc_comp)
+
+    call cpu_clock_begin(id_clock_SAL_pc_comm)
+    call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
+    call cpu_clock_end(id_clock_SAL_pc_comm)
+end subroutine proxy_source_compute2
 
 subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add reproducing sum
     type(SAL_conv_type), intent(in) :: sal_ct
@@ -1231,7 +1320,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
-    call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
+    call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
