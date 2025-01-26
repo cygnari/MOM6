@@ -1328,8 +1328,8 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
-    call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
-    ! call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
+    ! call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
+    call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
