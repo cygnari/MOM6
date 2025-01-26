@@ -831,7 +831,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 50, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 200, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
