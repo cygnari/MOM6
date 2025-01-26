@@ -231,18 +231,20 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     ! initialize the six top level cube panels
     loc = 0
     do i = 1, 6
+        ! print *, panel_points(i)
         if (panel_points(i) > 0) then
             loc = loc + 1
-            tree_panels_temp(i)%id = loc
-            tree_panels_temp(i)%face = i
-            tree_panels_temp(i)%min_xi = -pi/4.D0
-            tree_panels_temp(i)%mid_xi = 0.D0
-            tree_panels_temp(i)%max_xi = pi/4.D0
-            tree_panels_temp(i)%min_eta = -pi/4.D0
-            tree_panels_temp(i)%mid_eta = 0.D0
-            tree_panels_temp(i)%max_eta = pi/4.D0
-            allocate(tree_panels_temp(i)%points_inside(panel_points(i)))
-            tree_panels_temp(i)%panel_point_count = panel_points(i)
+            tree_panels_temp(loc)%id = loc
+            tree_panels_temp(loc)%face = i
+            tree_panels_temp(loc)%min_xi = -pi/4.D0
+            tree_panels_temp(loc)%mid_xi = 0.D0
+            tree_panels_temp(loc)%max_xi = pi/4.D0
+            tree_panels_temp(loc)%min_eta = -pi/4.D0
+            tree_panels_temp(loc)%mid_eta = 0.D0
+            tree_panels_temp(loc)%max_eta = pi/4.D0
+            allocate(tree_panels_temp(loc)%points_inside(panel_points(i)))
+            ! print *, size(tree_panels)
+            tree_panels_temp(loc)%panel_point_count = panel_points(i)
             face_id(i) = loc
         endif
     enddo
@@ -475,9 +477,12 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
     pc_count = 0
 
     do i = 1, point_count
-        tt_count = 6
-        do k = 1, 6
-            source_index(k) = k
+        tt_count = 0
+        do k = 1, min(6, size(tree_panels))
+            if (tree_panels(k)%parent_panel == -1) then
+                source_index(k) = k
+                tt_count = tt_count + 1
+            endif 
         enddo
         curr_loc = 1
         xco = x(i)
@@ -826,7 +831,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 100, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 10, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
@@ -1028,8 +1033,8 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
     real, intent(inout) :: proxy_source_weights(:)
     type(ocean_grid_type), intent(in) :: G
     real :: pi, r2, lat, lon, colat, x, y, z, a, ssh, min_xi, max_xi, min_eta, max_eta, xi, eta
-    real :: min_xi_p, max_xi_p, min_eta_p, max_eta_p
-    integer :: isc, iec, jsc, jec, ic, jc, i, ii, ij, leaf_i, shift, j, k, parent_i, shift1, offset, l, m
+    real :: min_xi_p, max_xi_p, min_eta_p, max_eta_p, val
+    integer :: isc, iec, jsc, jec, ic, jc, i, ii, ij, leaf_i, shift, j, k, parent_i, shift1, offset, l, m, offset1
     real, allocatable :: basis_vals(:,:), xi_vals(:), eta_vals(:)
 
     pi = 4.0*DATAN(1.0)
@@ -1085,14 +1090,17 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
             max_eta_p = sal_ct%tree_struct(parent_i)%max_eta
             shift = (parent_i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
             shift1 = (i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+            offset1 = 0
             do j = 1, sal_ct%interp_degree+1
                 do k = 1, sal_ct%interp_degree+1
                     call interp_vals_bli(basis_vals, xi_vals(k), eta_vals(j), min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
                     offset = 0
+                    offset1 = offset1+1
+                    val = proxy_source_weights(shift1+offset1)
                     do l = 1, sal_ct%interp_degree+1
                         do m = 1, sal_ct%interp_degree+1
                             offset = offset+1
-                            proxy_source_weights(shift+offset) = proxy_source_weights(shift+offset)+basis_vals(m,l)*proxy_source_weights(shift1+offset)
+                            proxy_source_weights(shift+offset) = proxy_source_weights(shift+offset)+basis_vals(m,l)*val
                         enddo
                     enddo
                 enddo
@@ -1321,6 +1329,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
     call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
+    ! call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
