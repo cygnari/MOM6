@@ -855,7 +855,7 @@ subroutine sal_conv_init(sal_ct, G)
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction comm)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
-    sal_ct%interp_degree=3
+    sal_ct%interp_degree=2
 end subroutine sal_conv_init
 
 subroutine ssh_pp_communications(sal_ct, G, eta, e_ssh)
