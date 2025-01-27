@@ -2,7 +2,7 @@ module MOM_conv_self_attr_load
 
 use MOM_error_handler,   only : MOM_error, FATAL, WARNING
 use MOM_grid,            only : ocean_grid_type, get_global_grid_size
-use MOM_file_parser,     only : get_param
+use MOM_file_parser,     only : read_param, get_param, log_version, param_file_type
 use MOM_coms_infra,      only : sum_across_PEs, max_across_PEs, num_PEs, PE_here, broadcast, sync_PEs
 use MOM_coms_infra,      only : send_to_PE, recv_from_PE
 use MOM_coms,            only : reproducing_sum
@@ -732,25 +732,34 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     enddo
 end subroutine calculate_communications
 
-subroutine sal_conv_init(sal_ct, G)
+subroutine sal_conv_init(sal_ct, G, param_file)
     ! initialize all the sal convolution things
     ! call only once
     ! does tree traversal, interaction list computation, sets up communication patterns
     type(SAL_conv_type), intent(out) :: sal_ct
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
-    character(len=12) :: mdl = "MOM_sal_conv" ! This module's name.
+    type(param_file_type), intent(in) :: param_file
     integer :: proc_count, isc, iec, jsc, jec, isg, ieg, jsg, jeg, imax, jmax, ic, jc, i, j, ig_off, jg_off
-    integer :: max_level, proc_rank, i_off, j_off, isd, ied, jsd, jed, rank, itc, jtc, count, pointcount
+    integer :: max_level, proc_rank, i_off, j_off, isd, ied, jsd, jed, rank, itc, jtc, count, pointcount, cluster_thresh
     integer, allocatable :: points_panels(:,:,:), indexsg(:), indexeg(:), pcg(:)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:), xt(:,:), yt(:,:), zt(:,:)
     real, allocatable :: xg1d(:), yg1d(:), zg1d(:), xc1d(:), yc1d(:), zc1d(:), xt1d(:), yt1d(:), zt1d(:)
-    real :: lat, lon, colat, x, y, z, pi
+    real :: lat, lon, colat, x, y, z, pi, theta
 
+# include "version_variable.h"
+    character(len=40) :: mdl = "MOM_conv_self_attr_load" ! This module's name.
+    call log_version(param_file, mdl, version, "")
     ! fix this
     ! call get_param(param_file, mdl, "SHT_REPRODUCING_SUM", sal_ct%reprod_sum, &
     !                "If true, use reproducing sums (invariant to PE layout) in inverse transform "// &
     !                "of proxy source weights. Otherwise use a simple sum of floating point numbers. ", &
     !                default=.False.)
+    call get_param(param_file, mdl, "CONV_SAL_THETA", theta, &
+                    "Theta parameter for Convolution SAL Tree Code", units="m m-1", default=0.9)
+    call get_param(param_file, mdl, "CONV_SAL_CLUSTER_SIZE", cluster_thresh, &
+                    "Cluster threshold size for Convolution SAL Tree Code", default=150)
+    call get_param(param_file, mdl, "CONV_SAL_INTERP_DEGREE", sal_ct%interp_degree, &
+                    "Interpolation degree for Convolution SAL Tree Code", default=2)
 
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
@@ -833,7 +842,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 50, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, cluster_thresh, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
@@ -842,7 +851,7 @@ subroutine sal_conv_init(sal_ct, G)
 
     ! compute the interaction lists for the target points in the target domain
     call interaction_list_compute(G, sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
-                                    0.9, sal_ct%own_ocean_points)
+                                    theta, sal_ct%own_ocean_points)
     call sync_PEs()
 
     ! compute communication patterns 
