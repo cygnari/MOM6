@@ -34,6 +34,7 @@ type, private :: cube_panel
     integer, allocatable :: points_inside(:) ! indices of contained points
     integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
+    integer :: own_source_point_count = 0 ! number of owned source points inside this panel
 
     contains
         procedure :: contains_point
@@ -420,7 +421,7 @@ end subroutine tree_traversal
 subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs, point_leaf_panel)
     ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
     type(ocean_grid_type), intent(in) :: G
-    type(cube_panel), intent(in) :: tree_panels(:)
+    type(cube_panel), intent(inout) :: tree_panels(:)
     real, intent(in) :: x(:), y(:), z(:)
     integer, intent(in) :: levs
     integer, intent(inout) :: points_panels(:,:)
@@ -443,6 +444,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs,
                 points_panels(level, i) = j
                 point_leaf_panel(i) = j
                 level = level + 1
+                tree_panels(j)%own_source_point_count = tree_panels(j)%own_source_point_count + 1
                 if (tree_panels(j)%is_leaf) then
                     exit jloop
                 else
@@ -831,7 +833,7 @@ subroutine sal_conv_init(sal_ct, G)
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 200, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, 100, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
@@ -1076,7 +1078,7 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
     ! upward pass to interpolate from child to parent panel proxy source potentials
     do i = size(sal_ct%tree_struct), 1, -1
         parent_i = sal_ct%tree_struct(i)%parent_panel
-        if (parent_i > 0) then
+        if ((parent_i > 0) .and. (sal_ct%tree_struct(i)%own_source_point_count > 0)) then
             min_xi = sal_ct%tree_struct(i)%min_xi
             max_xi = sal_ct%tree_struct(i)%max_xi
             min_eta = sal_ct%tree_struct(i)%min_eta
@@ -1328,8 +1330,8 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
-    ! call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
-    call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
+    call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
+    ! call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
 
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
