@@ -34,7 +34,7 @@ type, private :: cube_panel
     integer, allocatable :: points_inside(:) ! indices of contained points
     integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
-    integer :: own_source_point_count = 0 ! number of owned source points inside this panel
+    integer :: own_point_count = 0 ! number of owned source points inside this panel
 
     contains
         procedure :: contains_point
@@ -44,7 +44,7 @@ type, private :: interaction_pair
     ! data type to represent a pp/pc interaction between a point and a cube panel
     integer :: index_target
     integer :: index_source 
-    integer :: interact_type ! 0 for PP, 1 for PC
+    integer :: interact_type ! 0 for PP, 1 for PC, 2 for CP, 3 for CC
 end type interaction_pair
 
 type, public :: SAL_conv_type ; private
@@ -52,6 +52,7 @@ type, public :: SAL_conv_type ; private
     ! including the cubed sphere tree
     ! and communication things
     logical :: reprod_sum !< True if use reproducible global sums
+    logical :: use_fmm !< True if run in FMM mode, using cluster-particle and cluster-cluster interactions 
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(cube_panel), allocatable :: tree_struct(:)
@@ -72,10 +73,13 @@ type, public :: SAL_conv_type ; private
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
-integer :: id_clock_SAL_pc
-integer :: id_clock_SAL_pp
-integer :: id_clock_SAL_pc_comm
+integer :: id_clock_SAL_tc
+integer :: id_clock_SAL_fmm
+integer :: id_clock_SAL_cluster_comm
+integer :: id_clock_SAL_cc_comp
 integer :: id_clock_SAL_pc_comp
+integer :: id_clock_SAL_cp_comp
+integer :: id_clock_SAL_pp
 integer :: id_clock_SAL_pp_comm
 integer :: id_clock_SAL_pp_comp
 
@@ -444,7 +448,7 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs,
                 points_panels(level, i) = j
                 point_leaf_panel(i) = j
                 level = level + 1
-                tree_panels(j)%own_source_point_count = tree_panels(j)%own_source_point_count + 1
+                tree_panels(j)%own_point_count = tree_panels(j)%own_point_count + 1
                 if (tree_panels(j)%is_leaf) then
                     exit jloop
                 else
@@ -539,6 +543,7 @@ subroutine interaction_list_compute(G, pp_interactions, pc_interactions, tree_pa
 end subroutine interaction_list_compute
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
+    ! calculate communications for particle particle interactions
     type(sal_conv_type), intent(inout) :: sal_ct
     real, intent(in) :: xg(:), yg(:), zg(:)
     type(ocean_grid_type), intent(in) :: G
@@ -749,17 +754,20 @@ subroutine sal_conv_init(sal_ct, G, param_file)
 # include "version_variable.h"
     character(len=40) :: mdl = "MOM_conv_self_attr_load" ! This module's name.
     call log_version(param_file, mdl, version, "")
-    ! fix this
-    ! call get_param(param_file, mdl, "SHT_REPRODUCING_SUM", sal_ct%reprod_sum, &
-    !                "If true, use reproducing sums (invariant to PE layout) in inverse transform "// &
-    !                "of proxy source weights. Otherwise use a simple sum of floating point numbers. ", &
-    !                default=.False.)
     call get_param(param_file, mdl, "CONV_SAL_THETA", theta, &
                     "Theta parameter for Convolution SAL Tree Code", units="m m-1", default=0.9)
     call get_param(param_file, mdl, "CONV_SAL_CLUSTER_SIZE", cluster_thresh, &
                     "Cluster threshold size for Convolution SAL Tree Code", default=150)
     call get_param(param_file, mdl, "CONV_SAL_INTERP_DEGREE", sal_ct%interp_degree, &
                     "Interpolation degree for Convolution SAL Tree Code", default=2)
+    call get_param(param_file, mdl, "CONV_SAL_REPRODUCING", sal_ct%reprod_sum, &
+                    "Convolution SAL Tree Code Reproducing sum mode", default=.false.)
+    if (.not. sal_ct%reprod_sum) then
+        call get_param(param_file, mdl, "CONV_SAL_FMM", sal_ct%use_fmm, &
+                    "Convolution SAL FMM mode or not, FMM is incompatible with reproducing sum", default=.true.)
+    else 
+        sal_ct%use_fmm = .false.
+    endif
 
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
@@ -858,10 +866,16 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
-    id_clock_SAL_pc = cpu_clock_id('(Ocean SAL PC interactions)', grain=CLOCK_MODULE)
-    id_clock_SAL_pp = cpu_clock_id('(Ocean SAL PP interactions)', grain=CLOCK_MODULE)
-    id_clock_SAL_pc_comm = cpu_clock_id('(Ocean SAL PC interaction comm)', grain=CLOCK_MODULE)
+    id_clock_SAL_cluster_comm = cpu_clock_id('(Ocean SAL cluster comm)', grain=CLOCK_MODULE)
+    if (sal_ct%use_fmm) then
+        id_clock_SAL_fmm = cpu_clock_id('(Ocean SAL FMM)', grain=CLOCK_MODULE)
+        id_clock_SAL_cc_comp = cpu_clock_id('(Ocean SAL CC interaction comp)', grain=CLOCK_MODULE)
+        id_clock_SAL_cp_comp = cpu_clock_id('(Ocean SAL CP interaction comp)', grain=CLOCK_MODULE)
+    else
+        id_clock_SAL_tc = cpu_clock_id('(Ocean SAL Tree Code)', grain=CLOCK_MODULE)
+    endif
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
+    id_clock_SAL_pp = cpu_clock_id('(Ocean SAL PP interactions)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comm = cpu_clock_id('(Ocean SAL PP interaction comm)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
     sal_ct%interp_degree=2
@@ -1038,7 +1052,7 @@ subroutine interp_vals_bli(vals, xi, eta, min_xi, max_xi, min_eta, max_eta, degr
     enddo
 end subroutine interp_vals_bli
 
-subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights) 
+subroutine proxy_source_compute_nonrep(sal_ct, G, sshs, proxy_source_weights) 
     type(SAL_conv_type), intent(in) :: sal_ct
     real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
@@ -1066,7 +1080,7 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
         y = sin(colat)*sin(lon)
         z = cos(colat)
         a = G%areaT(ii, ij)/r2
-        ssh = sshs(ii, ij)
+        ssh = sshs(ii, ij)*a
         leaf_i = sal_ct%point_leaf_panel(i)
         shift = (leaf_i-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
         min_xi = sal_ct%tree_struct(leaf_i)%min_xi
@@ -1079,7 +1093,7 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
         do j = 1, sal_ct%interp_degree+1
             do k= 1, sal_ct%interp_degree+1
                 offset=offset+1
-                proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(k, j)*ssh*a
+                proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(k, j)*ssh
             enddo
         enddo
     enddo
@@ -1087,7 +1101,7 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
     ! upward pass to interpolate from child to parent panel proxy source potentials
     do i = size(sal_ct%tree_struct), 1, -1
         parent_i = sal_ct%tree_struct(i)%parent_panel
-        if ((parent_i > 0) .and. (sal_ct%tree_struct(i)%own_source_point_count > 0)) then
+        if ((parent_i > 0) .and. (sal_ct%tree_struct(i)%own_point_count > 0)) then
             min_xi = sal_ct%tree_struct(i)%min_xi
             max_xi = sal_ct%tree_struct(i)%max_xi
             min_eta = sal_ct%tree_struct(i)%min_eta
@@ -1121,12 +1135,12 @@ subroutine proxy_source_compute2(sal_ct, G, sshs, proxy_source_weights)
 
     call cpu_clock_end(id_clock_SAL_pc_comp)
 
-    call cpu_clock_begin(id_clock_SAL_pc_comm)
+    call cpu_clock_begin(id_clock_SAL_cluster_comm)
     call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
-    call cpu_clock_end(id_clock_SAL_pc_comm)
-end subroutine proxy_source_compute2
+    call cpu_clock_end(id_clock_SAL_cluster_comm)
+end subroutine proxy_source_compute_nonrep
 
-subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add reproducing sum
+subroutine proxy_source_compute_reprod(sal_ct, G, sshs, proxy_source_weights) ! reproducing sum still has some issues
     type(SAL_conv_type), intent(in) :: sal_ct
     real, intent(in) :: sshs(:,:)
     real, intent(inout) :: proxy_source_weights(:)
@@ -1143,6 +1157,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
     r2 = G%Rad_Earth ** 2
 
     call cpu_clock_begin(id_clock_SAL_pc_comp)
+    allocate(proxy_source_weights_sep(1, sal_ct%own_ocean_points, size(proxy_source_weights)), source=0.0)
 
     do i = 1, sal_ct%own_ocean_points
         ii = sal_ct%one_d_to_2d_i(i)
@@ -1154,7 +1169,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
         y = sin(colat)*sin(lon)
         z = cos(colat)
         a = G%areaT(ii, ij)/r2
-        ssh = sshs(ii, ij)
+        ssh = sshs(ii, ij)*a
         panelloop2: do k = 1, size(sal_ct%points_panels(:,i))
             i_t = sal_ct%points_panels(k, i)
             if (i_t == -1) then
@@ -1171,7 +1186,7 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
                 do l = 1, sal_ct%interp_degree+1
                     do m = 1, sal_ct%interp_degree+1
                         offset=offset+1
-                        proxy_source_weights(shift+offset)=proxy_source_weights(shift+offset)+basis_vals(m, l)*ssh*a
+                        proxy_source_weights_sep(1, i, shift+offset) = basis_vals(m, l)*ssh
                     enddo
                 enddo
             end if
@@ -1180,10 +1195,10 @@ subroutine proxy_source_compute(sal_ct, G, sshs, proxy_source_weights) ! add rep
 
     call cpu_clock_end(id_clock_SAL_pc_comp)
 
-    call cpu_clock_begin(id_clock_SAL_pc_comm)
-    call sum_across_PEs(proxy_source_weights, size(proxy_source_weights))
-    call cpu_clock_end(id_clock_SAL_pc_comm)
-end subroutine proxy_source_compute
+    call cpu_clock_begin(id_clock_SAL_cluster_comm)
+    sum_tot = reproducing_sum(proxy_source_weights_sep(:,:,1:size(proxy_source_weights)), sums=proxy_source_weights(:))
+    call cpu_clock_end(id_clock_SAL_cluster_comm)
+end subroutine proxy_source_compute_reprod
 
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact of eps and cons more
     real, intent(in) :: tx, ty, tz, sx, sy, sz
@@ -1326,26 +1341,36 @@ subroutine sal_conv_eval(sal_ct, G, eta, e_sal, sal_x, sal_y)
     real, intent(in) :: eta(:,:) ! ssh
     real, intent(inout) :: e_sal(:,:), sal_x(:,:), sal_y(:,:) ! x,y components of SAL potential gradient
     real, allocatable :: e_ssh(:), proxy_source_weights(:)
-    integer :: source_size
+    integer :: source_size, i, id
 
     call cpu_clock_begin(id_clock_SAL)
 
     sal_x(:,:) = 0.0
     sal_y(:,:) = 0.0
     e_sal(:,:) = 0.0
+    id = PE_here()
 
-    call cpu_clock_begin(id_clock_SAL_pc)
+    call cpu_clock_begin(id_clock_SAL_tc)
 
     ! compute proxy source weights for computational domain
     source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
     allocate(proxy_source_weights(source_size), source=0.0)
-    call proxy_source_compute2(sal_ct, G, eta, proxy_source_weights)
-    ! call proxy_source_compute(sal_ct, G, eta, proxy_source_weights)
+    if (sal_ct%reprod_sum) then
+        call proxy_source_compute_reprod(sal_ct, G, eta, proxy_source_weights)
+    else
+        call proxy_source_compute_nonrep(sal_ct, G, eta, proxy_source_weights)
+    endif
+
+    if (id == 0) then
+        do i = 1, size(proxy_source_weights)
+            print *, proxy_source_weights(i)
+        enddo
+    endif
 
     ! compute PC interactions for target domain
     call pc_interaction_compute(sal_ct, G, proxy_source_weights, e_sal, sal_x, sal_y)
 
-    call cpu_clock_end(id_clock_SAL_pc)
+    call cpu_clock_end(id_clock_SAL_tc)
     call cpu_clock_begin(id_clock_SAL_pp)
 
     ! do SSH communication needed for PP interactions
