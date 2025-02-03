@@ -947,6 +947,8 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         sal_ct%use_fmm = .false.
     endif
 
+    print *, 'init 0'
+
     sal_ct%p = num_PEs() ! number of ranks
     sal_ct%id = PE_here() ! current rank
 
@@ -956,6 +958,8 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
 
     ic=iec-isc+1; jc=jec-jsc+1
+
+    print *, 'init 1'
 
     count = 0
     allocate(sal_ct%two_d_to_1d(ied, jed), source=-1)
@@ -973,6 +977,8 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     allocate(yc1d(count), source=0.0)
     allocate(zc1d(count), source=0.0)
     sal_ct%own_ocean_points = count
+
+    print *, 'init 2'
 
     count = 0
     do j = jsc, jec
@@ -995,11 +1001,15 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         enddo
     enddo
 
+    print *, 'init 3'
+
     allocate(pcg(sal_ct%p), source=0)
     allocate(indexsg(sal_ct%p), source=0)
     allocate(indexeg(sal_ct%p), source=0)
     pcg(sal_ct%id+1) = count
     call sum_across_PEs(pcg, sal_ct%p)
+
+    print *, 'init 4'
 
     indexsg(1) = 1
     do i = 1, sal_ct%p-1
@@ -1011,6 +1021,8 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     sal_ct%indexsg = indexsg
     sal_ct%indexeg = indexeg
     sal_ct%pcg = pcg
+
+    print *, 'init 5'
 
     pointcount = 0
     do i = 1, sal_ct%p
@@ -1027,17 +1039,23 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call sum_across_PEs(xg1d, pointcount) ! potentially a problem at high resolution, memory issues
     call sum_across_PEs(yg1d, pointcount)
     call sum_across_PEs(zg1d, pointcount)
+
+    print *, 'init 6'
     ! xg/yg/zg is now a copy of all the points from all the processors
     call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, cluster_thresh, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
+    print *, 'init 7'
+
     if (sal_ct%use_fmm) then
         call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, cluster_thresh, count) ! constructs tree of targets
+        print *, 'init 7.5'
     endif
 
     allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
     ! finds which panels contain the computational domain points
     call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level, sal_ct%point_leaf_panel) 
+    print *, 'init 8'
 
     ! compute the interaction lists for the target points in the target domain
     if (sal_ct%use_fmm) then
@@ -1048,9 +1066,11 @@ subroutine sal_conv_init(sal_ct, G, param_file)
                                         theta, cluster_thresh, sal_ct%own_ocean_points)
     endif
     call sync_PEs()
+    print *, 'init 9'
 
     ! compute communication patterns 
     call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
+    print *, 'init 10'
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
     id_clock_SAL_cluster_comm = cpu_clock_id('(Ocean SAL cluster comm)', grain=CLOCK_MODULE)
