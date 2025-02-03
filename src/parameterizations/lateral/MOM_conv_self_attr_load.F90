@@ -576,7 +576,7 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     if (ppc > 0) then
         do i = 1, 6 ! source index
             if (source_tree(i)%level == 0) then
-                do j = 1, 6 ! target index
+                do j = 1, min(6, size(target_tree)) ! target index
                     if (target_tree(j)%level == 0) then
                         tree_traverse_count = tree_traverse_count + 1
                         source_index(tree_traverse_count) = i
