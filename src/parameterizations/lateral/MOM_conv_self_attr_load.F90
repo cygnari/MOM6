@@ -555,7 +555,7 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     type(cube_panel), intent(in) :: source_tree(:), target_tree(:)
     real, intent(in) :: theta
     integer, intent(in) :: cluster_thresh, ppc
-    integer :: i, j, tree_traverse_count, curr_loc, pp_count, pc_count, cp_count, cc_count, i_t, i_s, c_t, c_s, int_count
+    integer :: i, j, tree_traverse_count, curr_loc, pp_count, pc_count, cp_count, cc_count, i_t, i_s, c_t, c_s, int_count, id
     integer, allocatable :: source_index(:), target_index(:), loc(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     real :: x1t, x2t, x3t, x1s, x2s, x3s, dist, separation
@@ -571,6 +571,8 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     cc_count = 0
     int_count = 0
 
+    id = PE_here()
+
     if (ppc > 0) then
         do i = 1, 6 ! source index
             if (source_tree(i)%level == 0) then
@@ -584,11 +586,18 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
             endif
         enddo
 
+        if (id == 252) then
+            print *, tree_traverse_count
+        endif
+
         do while (curr_loc <= tree_traverse_count)
             i_t = target_index(curr_loc)
             i_s = source_index(curr_loc)
             c_t = target_tree(i_t)%panel_point_count
             c_s = source_tree(i_s)%panel_point_count
+            if (id == 252) then
+                print *, curr_loc, tree_traverse_count, i_t, i_s, c_t, c_s
+            endif
             if ((c_t > 0) .and. (c_s > 0)) then
                 call xyz_from_xieta(x1t, x2t, x3t, target_tree(i_t)%mid_xi, target_tree(i_t)%mid_eta, target_tree(i_t)%face)
                 call xyz_from_xieta(x1s, x2s, x3s, source_tree(i_s)%mid_xi, source_tree(i_s)%mid_eta, source_tree(i_s)%face)
