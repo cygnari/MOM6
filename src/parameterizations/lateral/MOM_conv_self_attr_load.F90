@@ -560,9 +560,9 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     real :: x1t, x2t, x3t, x1s, x2s, x3s, dist, separation
 
-    allocate(target_index(size(source_tree)*64))
-    allocate(source_index(size(source_tree)*64))
-    allocate(interaction_lists_temp(size(source_tree)*64))
+    allocate(target_index(size(source_tree)*32))
+    allocate(source_index(size(source_tree)*32))
+    allocate(interaction_lists_temp(size(source_tree)*32))
     tree_traverse_count = 0
     curr_loc = 1
     pp_count = 0
@@ -586,35 +586,21 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
             endif
         enddo
 
-        if (id == 252) then
-            print *, tree_traverse_count, ppc
-        endif
-
         do while (curr_loc <= tree_traverse_count)
             i_t = target_index(curr_loc)
             i_s = source_index(curr_loc)
             c_t = target_tree(i_t)%panel_point_count
             c_s = source_tree(i_s)%panel_point_count
-            if (id == 252) then
-                print *, curr_loc, tree_traverse_count, i_t, i_s, c_t, c_s
-                print *, size(target_tree), size(source_tree)
-            endif
             if ((c_t > 0) .and. (c_s > 0)) then
                 call xyz_from_xieta(x1t, x2t, x3t, target_tree(i_t)%mid_xi, target_tree(i_t)%mid_eta, target_tree(i_t)%face)
                 call xyz_from_xieta(x1s, x2s, x3s, source_tree(i_s)%mid_xi, source_tree(i_s)%mid_eta, source_tree(i_s)%face)
                 dist = ACOS(MIN(MAX(x1t*x1s+x2t*x2s+x3t*x3s, -1.0_8), 1.0_8))
                 separation = (target_tree(i_t)%radius+source_tree(i_s)%radius)/dist
-                if (id == 252) then
-                    print *, 'here 1'
-                endif
                 if ((dist > 0) .and. (separation < theta)) then
                     ! two panels are well separated
                     int_count = int_count + 1
                     interaction_lists_temp(int_count)%index_target = i_t
                     interaction_lists_temp(int_count)%index_source = i_s
-                    if (id == 252) then
-                        print *, 'here 2'
-                    endif
                     if (c_s > cluster_thresh) then
                         if (c_t > cluster_thresh) then ! CC 
                             cc_count = cc_count + 1
@@ -634,9 +620,6 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
                     endif
                 else
                     ! two points are not well separated
-                    if (id == 252) then
-                        print *, 'here 3'
-                    endif
                     if ((c_t < cluster_thresh) .and. (c_s < cluster_thresh)) then ! both have few points, pp interaction
                         int_count = int_count + 1
                         pp_count = pp_count + 1
@@ -666,9 +649,6 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
                         tree_traverse_count = tree_traverse_count + target_tree(i_t)%child_panel_count
                     else
                         ! neither is a leaf, refine the panel with more points
-                        if (id == 252) then
-                            print *, 'here 4'
-                        endif
                         if (c_s > c_t) then
                             ! source has more points, refine source
                             do i = 1, source_tree(i_s)%child_panel_count
