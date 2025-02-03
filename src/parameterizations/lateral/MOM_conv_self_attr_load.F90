@@ -34,7 +34,7 @@ type, private :: cube_panel
     integer, allocatable :: points_inside(:) ! indices of contained points
     integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
-    integer :: own_point_count = 0 ! number of owned source points inside this panel
+    integer :: own_point_count = 0 ! number of owned source/target points inside this panel
 
     contains
         procedure :: contains_point
@@ -69,7 +69,7 @@ type, public :: SAL_conv_type ; private
     integer, allocatable :: indexsg(:), indexeg(:), pcg(:)
     integer, allocatable :: two_d_to_1d(:,:) ! maps between 1d and 2d
     integer, allocatable :: one_d_to_2d_i(:), one_d_to_2d_j(:)
-    integer :: own_ocean_points
+    integer :: own_ocean_points ! owned ocean source/target points
     integer :: total_ocean_points
     integer, allocatable :: point_leaf_panel(:) ! which leaf panel contains point i
 end type SAL_conv_type
@@ -550,11 +550,11 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
     enddo
 end subroutine interaction_list_compute
 
-subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, source_tree, target_tree, theta, cluster_thresh) ! for fmm mode
+subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, source_tree, target_tree, theta, cluster_thresh, ppc) ! for fmm mode
     type(interaction_pair), allocatable, intent(out) :: pp_ints(:), pc_ints(:), cp_ints(:), cc_ints(:)
     type(cube_panel), intent(in) :: source_tree(:), target_tree(:)
     real, intent(in) :: theta
-    integer, intent(in) :: cluster_thresh
+    integer, intent(in) :: cluster_thresh, ppc
     integer :: i, j, tree_traverse_count, curr_loc, pp_count, pc_count, cp_count, cc_count, i_t, i_s, c_t, c_s, int_count
     integer, allocatable :: source_index(:), target_index(:), loc(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
@@ -564,113 +564,110 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     allocate(source_index(size(source_tree)*64))
     allocate(interaction_lists_temp(size(source_tree)*64))
     tree_traverse_count = 0
-
-    do i = 1, 6 ! source index
-        if (source_tree(i)%level == 0) then
-            do j = 1, 6 ! target index
-                if (target_tree(j)%level == 0) then
-                    tree_traverse_count = tree_traverse_count + 1
-                    source_index(tree_traverse_count) = i
-                    target_index(tree_traverse_count) = j
-                endif
-            enddo
-        endif
-    enddo
-
     curr_loc = 1
     pp_count = 0
     pc_count = 0
     cp_count = 0
     cc_count = 0
     int_count = 0
-    do while (curr_loc <= tree_traverse_count)
-    ! do while (curr_loc <= 30)
-        i_t = target_index(curr_loc)
-        i_s = source_index(curr_loc)
-        c_t = target_tree(i_t)%panel_point_count
-        c_s = source_tree(i_s)%panel_point_count
-        if ((c_t > 0) .and. (c_s > 0)) then
-            call xyz_from_xieta(x1t, x2t, x3t, target_tree(i_t)%mid_xi, target_tree(i_t)%mid_eta, target_tree(i_t)%face)
-            call xyz_from_xieta(x1s, x2s, x3s, source_tree(i_s)%mid_xi, source_tree(i_s)%mid_eta, source_tree(i_s)%face)
-            dist = ACOS(MIN(MAX(x1t*x1s+x2t*x2s+x3t*x3s, -1.0_8), 1.0_8))
-            separation = (target_tree(i_t)%radius+source_tree(i_s)%radius)/dist
-            if ((dist > 0) .and. (separation < theta)) then
-                ! two panels are well separated
-                int_count = int_count + 1
-                interaction_lists_temp(int_count)%index_target = i_t
-                interaction_lists_temp(int_count)%index_source = i_s
-                if (c_s > cluster_thresh) then
-                    if (c_t > cluster_thresh) then ! CC 
-                        cc_count = cc_count + 1
-                        interaction_lists_temp(int_count)%interact_type = 3
-                    else ! PC
-                        pc_count = pc_count + 1
-                        interaction_lists_temp(int_count)%interact_type = 1
+
+    if (ppc > 0) then
+        do i = 1, 6 ! source index
+            if (source_tree(i)%level == 0) then
+                do j = 1, 6 ! target index
+                    if (target_tree(j)%level == 0) then
+                        tree_traverse_count = tree_traverse_count + 1
+                        source_index(tree_traverse_count) = i
+                        target_index(tree_traverse_count) = j
+                    endif
+                enddo
+            endif
+        enddo
+
+        do while (curr_loc <= tree_traverse_count)
+            i_t = target_index(curr_loc)
+            i_s = source_index(curr_loc)
+            c_t = target_tree(i_t)%panel_point_count
+            c_s = source_tree(i_s)%panel_point_count
+            if ((c_t > 0) .and. (c_s > 0)) then
+                call xyz_from_xieta(x1t, x2t, x3t, target_tree(i_t)%mid_xi, target_tree(i_t)%mid_eta, target_tree(i_t)%face)
+                call xyz_from_xieta(x1s, x2s, x3s, source_tree(i_s)%mid_xi, source_tree(i_s)%mid_eta, source_tree(i_s)%face)
+                dist = ACOS(MIN(MAX(x1t*x1s+x2t*x2s+x3t*x3s, -1.0_8), 1.0_8))
+                separation = (target_tree(i_t)%radius+source_tree(i_s)%radius)/dist
+                if ((dist > 0) .and. (separation < theta)) then
+                    ! two panels are well separated
+                    int_count = int_count + 1
+                    interaction_lists_temp(int_count)%index_target = i_t
+                    interaction_lists_temp(int_count)%index_source = i_s
+                    if (c_s > cluster_thresh) then
+                        if (c_t > cluster_thresh) then ! CC 
+                            cc_count = cc_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 3
+                        else ! PC
+                            pc_count = pc_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 1
+                        endif
+                    else
+                        if (c_t > cluster_thresh) then ! CP
+                            cp_count = cp_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 2
+                        else ! PP
+                            pp_count = pp_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 0
+                        endif
                     endif
                 else
-                    if (c_t > cluster_thresh) then ! CP
-                        cp_count = cp_count + 1
-                        interaction_lists_temp(int_count)%interact_type = 2
-                    else ! PP
+                    ! two points are not well separated
+                    if ((c_t < cluster_thresh) .and. (c_s < cluster_thresh)) then ! both have few points, pp interaction
+                        int_count = int_count + 1
                         pp_count = pp_count + 1
+                        interaction_lists_temp(int_count)%index_target = i_t
+                        interaction_lists_temp(int_count)%index_source = i_s
                         interaction_lists_temp(int_count)%interact_type = 0
-                    endif
-                endif
-            else
-                ! two points are not well separated
-                if ((c_t < cluster_thresh) .and. (c_s < cluster_thresh)) then ! both have few points, pp interaction
-                    int_count = int_count + 1
-                    pp_count = pp_count + 1
-                    interaction_lists_temp(int_count)%index_target = i_t
-                    interaction_lists_temp(int_count)%index_source = i_s
-                    interaction_lists_temp(int_count)%interact_type = 0
-                else if (source_tree(i_s)%is_leaf .and. target_tree(i_t)%is_leaf) then
-                    ! both panels are leaves, pp interaction
-                    int_count = int_count + 1
-                    pp_count = pp_count + 1
-                    interaction_lists_temp(int_count)%index_target = i_t
-                    interaction_lists_temp(int_count)%index_source = i_s
-                    interaction_lists_temp(int_count)%interact_type = 0
-                else if (target_tree(i_t)%is_leaf) then
-                    ! target panel is leaf, refine source
-                    do i = 1, source_tree(i_s)%child_panel_count
-                        ! print *, 'refine source', i_t, source_tree(i_s)%child_panels(i)
-                        target_index(tree_traverse_count+i) = i_t
-                        source_index(tree_traverse_count+i) = source_tree(i_s)%child_panels(i)
-                    enddo
-                    tree_traverse_count = tree_traverse_count + source_tree(i_s)%child_panel_count
-                else if (source_tree(i_s)%is_leaf) then
-                    ! source panel is leaf, refine target
-                    do i = 1, target_tree(i_t)%child_panel_count
-                        ! print *, 'refine target', i_s, target_tree(i_t)%child_panels(i)
-                        target_index(tree_traverse_count+i) = target_tree(i_t)%child_panels(i)
-                        source_index(tree_traverse_count+i) = i_s
-                    enddo
-                    tree_traverse_count = tree_traverse_count + target_tree(i_t)%child_panel_count
-                else
-                    ! neither is a leaf, refine the panel with more points
-                    if (c_s > c_t) then
-                        ! source has more points, refine source
+                    else if (source_tree(i_s)%is_leaf .and. target_tree(i_t)%is_leaf) then
+                        ! both panels are leaves, pp interaction
+                        int_count = int_count + 1
+                        pp_count = pp_count + 1
+                        interaction_lists_temp(int_count)%index_target = i_t
+                        interaction_lists_temp(int_count)%index_source = i_s
+                        interaction_lists_temp(int_count)%interact_type = 0
+                    else if (target_tree(i_t)%is_leaf) then
+                        ! target panel is leaf, refine source
                         do i = 1, source_tree(i_s)%child_panel_count
-                            ! print *, 'refine source', i_t, source_tree(i_s)%child_panels(i)
                             target_index(tree_traverse_count+i) = i_t
                             source_index(tree_traverse_count+i) = source_tree(i_s)%child_panels(i)
                         enddo
                         tree_traverse_count = tree_traverse_count + source_tree(i_s)%child_panel_count
-                    else
-                        ! target has more points, refine target
+                    else if (source_tree(i_s)%is_leaf) then
+                        ! source panel is leaf, refine target
                         do i = 1, target_tree(i_t)%child_panel_count
-                            ! print *, 'refine target', i_s, target_tree(i_t)%child_panels(i)
                             target_index(tree_traverse_count+i) = target_tree(i_t)%child_panels(i)
                             source_index(tree_traverse_count+i) = i_s
                         enddo
                         tree_traverse_count = tree_traverse_count + target_tree(i_t)%child_panel_count
+                    else
+                        ! neither is a leaf, refine the panel with more points
+                        if (c_s > c_t) then
+                            ! source has more points, refine source
+                            do i = 1, source_tree(i_s)%child_panel_count
+                                target_index(tree_traverse_count+i) = i_t
+                                source_index(tree_traverse_count+i) = source_tree(i_s)%child_panels(i)
+                            enddo
+                            tree_traverse_count = tree_traverse_count + source_tree(i_s)%child_panel_count
+                        else
+                            ! target has more points, refine target
+                            do i = 1, target_tree(i_t)%child_panel_count
+                                target_index(tree_traverse_count+i) = target_tree(i_t)%child_panels(i)
+                                source_index(tree_traverse_count+i) = i_s
+                            enddo
+                            tree_traverse_count = tree_traverse_count + target_tree(i_t)%child_panel_count
+                        endif
                     endif
                 endif
             endif
-        endif
-        curr_loc = curr_loc + 1
-    enddo
+            curr_loc = curr_loc + 1
+        enddo
+    endif
 
     allocate(pp_ints(pp_count))
     allocate(pc_ints(pc_count))
@@ -1060,7 +1057,7 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     ! compute the interaction lists for the target points in the target domain
     if (sal_ct%use_fmm) then
         call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, sal_ct%cc_interactions, &
-                                        sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, cluster_thresh)
+                                        sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, cluster_thresh, sal_ct%own_ocean_points)
     else
         call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
                                         theta, cluster_thresh, sal_ct%own_ocean_points)
