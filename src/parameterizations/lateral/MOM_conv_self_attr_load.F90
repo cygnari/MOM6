@@ -587,7 +587,7 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
         enddo
 
         if (id == 252) then
-            print *, tree_traverse_count
+            print *, tree_traverse_count, ppc
         endif
 
         do while (curr_loc <= tree_traverse_count)
@@ -597,6 +597,7 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
             c_s = source_tree(i_s)%panel_point_count
             if (id == 252) then
                 print *, curr_loc, tree_traverse_count, i_t, i_s, c_t, c_s
+                print *, size(target_tree), size(source_tree)
             endif
             if ((c_t > 0) .and. (c_s > 0)) then
                 call xyz_from_xieta(x1t, x2t, x3t, target_tree(i_t)%mid_xi, target_tree(i_t)%mid_eta, target_tree(i_t)%face)
