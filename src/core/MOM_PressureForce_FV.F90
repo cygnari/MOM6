@@ -363,9 +363,9 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
       e_sal(i, j) = e_sal(i, j)*GV%g_Earth
     enddo ; enddo
 
-    call hchksum(e_sal_x, "SAL x derivative", G%HI, haloshift=1)
-    call hchksum(e_sal_y, "SAL y derivative", G%HI, haloshift=1)
-    call hchksum(e_sal, "SAL potential", G%HI, haloshift=1)
+    ! call hchksum(e_sal_x, "SAL x derivative", G%HI, haloshift=1)
+    ! call hchksum(e_sal_y, "SAL y derivative", G%HI, haloshift=1)
+    ! call hchksum(e_sal, "SAL potential", G%HI, haloshift=1)
 
     ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
     !   !$OMP parallel do default(shared)
