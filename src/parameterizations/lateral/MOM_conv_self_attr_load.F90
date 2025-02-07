@@ -79,7 +79,6 @@ integer :: id_clock_SAL_tc
 integer :: id_clock_SAL_fmm
 integer :: id_clock_SAL_upward_pass
 integer :: id_clock_SAL_downward_pass
-integer :: id_clock_SAL_cluster_comm
 integer :: id_clock_SAL_ssh_comm
 integer :: id_clock_SAL_cc_comp
 integer :: id_clock_SAL_pc_comp
@@ -1060,16 +1059,17 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
 
     id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
-    id_clock_SAL_cluster_comm = cpu_clock_id('(Ocean SAL cluster comm)', grain=CLOCK_MODULE)
     id_clock_SAL_ssh_comm = cpu_clock_id('(Ocean SAL SSH communication)', grain=CLOCK_MODULE)
-    id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
+    
     if (sal_ct%use_fmm) then
         id_clock_SAL_fmm = cpu_clock_id('(Ocean SAL FMM)', grain=CLOCK_MODULE)
+        id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
+        id_clock_SAL_downward_pass = cpu_clock_id('(Ocean SAL downward pass)', grain=CLOCK_MODULE)
         id_clock_SAL_cc_comp = cpu_clock_id('(Ocean SAL CC interaction comp)', grain=CLOCK_MODULE)
         id_clock_SAL_cp_comp = cpu_clock_id('(Ocean SAL CP interaction comp)', grain=CLOCK_MODULE)
-        id_clock_SAL_downward_pass = cpu_clock_id('(Ocean SAL downward pass)', grain=CLOCK_MODULE)
     else
         id_clock_SAL_tc = cpu_clock_id('(Ocean SAL Tree Code)', grain=CLOCK_MODULE)
+        id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
     endif
     id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
     id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
@@ -1677,9 +1677,9 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     type(ocean_grid_type), intent(in) :: G
     real, intent(inout) :: sal_x(:,:), sal_y(:,:)
     real, intent(in) :: e_ssh(:), eta(:,:)
-    integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, id, count, ii, ij, i_tp, k
+    integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, id, count, ii, ij, i_tp, k, sc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
-    real, allocatable :: sshs(:), a_s(:)
+    real, allocatable :: sshs(:), a_s(:), sxs(:), sys(:), szs(:), ssshs(:)
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
@@ -1689,6 +1689,35 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
+        sc = sal_ct%tree_struct(i_s)%panel_point_count
+        allocate(sxs(sc))
+        allocate(sys(sc))
+        allocate(szs(sc))
+        allocate(ssshs(sc))
+        do j = 1, sc
+            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+            if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
+                i_si = i_sp - sal_ct%own_ocean_points
+                ssh = e_ssh(i_si)
+                sx = sal_ct%e_xs(i_si)
+                sy = sal_ct%e_ys(i_si)
+                sz = sal_ct%e_zs(i_si)
+            else
+                i_si = sal_ct%one_d_to_2d_i(i_sp)
+                i_sj = sal_ct%one_d_to_2d_j(i_sp)
+                lat = G%geoLatT(i_si, i_sj)
+                lon = G%geoLonT(i_si, i_sj)
+                colat = 0.5*pi-lat
+                sx = sin(colat)*cos(lon)
+                sy = sin(colat)*sin(lon)
+                sz = cos(colat)
+                ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
+            end if
+            sxs(j) = sx
+            sys(j) = sy
+            szs(j) = sz
+            ssshs(j) = ssh
+        enddo
         do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
             i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
             i_ti = sal_ct%one_d_to_2d_i(i_tp)
@@ -1699,30 +1728,16 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
             x = sin(colat)*cos(lon)
             y = sin(colat)*sin(lon)
             z = cos(colat)
-            do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
-                i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-                if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
-                    i_si = i_sp - sal_ct%own_ocean_points
-                    ssh = e_ssh(i_si)
-                    sx = sal_ct%e_xs(i_si)
-                    sy = sal_ct%e_ys(i_si)
-                    sz = sal_ct%e_zs(i_si)
-                else
-                    i_si = sal_ct%one_d_to_2d_i(i_sp)
-                    i_sj = sal_ct%one_d_to_2d_j(i_sp)
-                    lat = G%geoLatT(i_si, i_sj)
-                    lon = G%geoLonT(i_si, i_sj)
-                    colat = 0.5*pi-lat
-                    sx = sin(colat)*cos(lon)
-                    sy = sin(colat)*sin(lon)
-                    sz = cos(colat)
-                    ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
-                end if
-                call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
-                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
-                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
+            do j = 1, sc             
+                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
+                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
             enddo
         enddo
+        deallocate(sxs)
+        deallocate(sys)
+        deallocate(szs)
+        deallocate(ssshs)
     enddo
     call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute_fmm
@@ -1745,51 +1760,51 @@ subroutine fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, pr
         max_xi_p = sal_ct%tree_struct_targets(i)%max_xi
         min_eta_p = sal_ct%tree_struct_targets(i)%min_eta
         max_eta_p = sal_ct%tree_struct_targets(i)%max_eta
-        if (.not. sal_ct%tree_struct_targets(i)%is_leaf) then 
-            ! interpolate from parent panel to child panel
-            do j = 1, sal_ct%tree_struct_targets(i)%child_panel_count
-                i_c = sal_ct%tree_struct_targets(i)%child_panels(j)
-                min_xi_c = sal_ct%tree_struct_targets(i_c)%min_xi
-                max_xi_c = sal_ct%tree_struct_targets(i_c)%max_xi
-                min_eta_c = sal_ct%tree_struct_targets(i_c)%min_eta
-                max_eta_c = sal_ct%tree_struct_targets(i_c)%max_eta
-                call bli_interp_points_shift(cheb_xi_c, min_xi_c, max_xi_c, sal_ct%interp_degree)
-                call bli_interp_points_shift(cheb_eta_c, min_eta_c, max_eta_c, sal_ct%interp_degree)
-                shift_c = (i_c-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                offset_c = 0
-                do k = 1, sal_ct%interp_degree+1 ! child panel eta loop
-                    eta = cheb_eta_c(k)
-                    do l = 1, sal_ct%interp_degree+1 ! child panel xi loop
-                        offset_c =  offset_c + 1
-                        xi = cheb_xi_c(l)
-                        call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
-                        proxy_target_weights_x(:,:,i_c) = proxy_target_weights_x(:,:,i_c) + basis_vals * proxy_target_weights_x(:,:,i)
-                        proxy_target_weights_y(:,:,i_c) = proxy_target_weights_y(:,:,i_c) + basis_vals * proxy_target_weights_y(:,:,i)
-                    enddo
-                enddo
-            enddo
-        else 
+        ! if (.not. sal_ct%tree_struct_targets(i)%is_leaf) then 
+        !     ! interpolate from parent panel to child panel
+        !     do j = 1, sal_ct%tree_struct_targets(i)%child_panel_count
+        !         i_c = sal_ct%tree_struct_targets(i)%child_panels(j)
+        !         min_xi_c = sal_ct%tree_struct_targets(i_c)%min_xi
+        !         max_xi_c = sal_ct%tree_struct_targets(i_c)%max_xi
+        !         min_eta_c = sal_ct%tree_struct_targets(i_c)%min_eta
+        !         max_eta_c = sal_ct%tree_struct_targets(i_c)%max_eta
+        !         call bli_interp_points_shift(cheb_xi_c, min_xi_c, max_xi_c, sal_ct%interp_degree)
+        !         call bli_interp_points_shift(cheb_eta_c, min_eta_c, max_eta_c, sal_ct%interp_degree)
+        !         shift_c = (i_c-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+        !         offset_c = 0
+        !         do k = 1, sal_ct%interp_degree+1 ! child panel eta loop
+        !             eta = cheb_eta_c(k)
+        !             do l = 1, sal_ct%interp_degree+1 ! child panel xi loop
+        !                 offset_c =  offset_c + 1
+        !                 xi = cheb_xi_c(l)
+        !                 call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+        !                 proxy_target_weights_x(:,:,i_c) = proxy_target_weights_x(:,:,i_c) + basis_vals * proxy_target_weights_x(:,:,i)
+        !                 proxy_target_weights_y(:,:,i_c) = proxy_target_weights_y(:,:,i_c) + basis_vals * proxy_target_weights_y(:,:,i)
+        !             enddo
+        !         enddo
+        !     enddo
+        ! else 
         ! interpolate from leaf panel to target points inside
-            do j = 1, sal_ct%tree_struct_targets(i)%panel_point_count
-                i_t = sal_ct%tree_struct_targets(i)%points_inside(j)
-                i_ti = sal_ct%one_d_to_2d_i(i_t)
-                i_tj = sal_ct%one_d_to_2d_j(i_t)
-                lat = G%geoLatT(i_ti, i_tj)*pi/180.0
-                lon = G%geoLonT(i_ti, i_tj)*pi/180.0
-                colat = 0.5*pi-lat
-                tx = sin(colat)*cos(lon)
-                ty = sin(colat)*sin(lon)
-                tz = cos(colat)
-                call xieta_from_xyz(tx, ty, tz, xi, eta)
-                call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
-                do k = 1, sal_ct%interp_degree+1 ! eta loop
-                    do l = 1, sal_ct%interp_degree+1 ! xi loop
-                        sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + proxy_target_weights_x(l,k,i)*basis_vals(l,k)
-                        sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + proxy_target_weights_y(l,k,i)*basis_vals(l,k)
-                    enddo
+        do j = 1, sal_ct%tree_struct_targets(i)%panel_point_count
+            i_t = sal_ct%tree_struct_targets(i)%points_inside(j)
+            i_ti = sal_ct%one_d_to_2d_i(i_t)
+            i_tj = sal_ct%one_d_to_2d_j(i_t)
+            lat = G%geoLatT(i_ti, i_tj)*pi/180.0
+            lon = G%geoLonT(i_ti, i_tj)*pi/180.0
+            colat = 0.5*pi-lat
+            tx = sin(colat)*cos(lon)
+            ty = sin(colat)*sin(lon)
+            tz = cos(colat)
+            call xieta_from_xyz(tx, ty, tz, xi, eta)
+            call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+            do k = 1, sal_ct%interp_degree+1 ! eta loop
+                do l = 1, sal_ct%interp_degree+1 ! xi loop
+                    sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + proxy_target_weights_x(l,k,i)*basis_vals(l,k)
+                    sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + proxy_target_weights_y(l,k,i)*basis_vals(l,k)
                 enddo
             enddo
-        endif
+        enddo
+        ! endif
     enddo iloop
     call cpu_clock_end(id_clock_SAL_downward_pass)
 end subroutine fmm_downward_pass
