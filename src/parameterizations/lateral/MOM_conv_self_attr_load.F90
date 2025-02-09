@@ -1679,7 +1679,7 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     real, intent(in) :: e_ssh(:), eta(:,:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, id, count, ii, ij, i_tp, k, sc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
-    real, allocatable :: sshs(:), a_s(:), sxs(:), sys(:), szs(:), ssshs(:)
+    ! real, allocatable :: sshs(:), a_s(:), sxs(:), sys(:), szs(:), ssshs(:)
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
@@ -1690,34 +1690,34 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
         sc = sal_ct%tree_struct(i_s)%panel_point_count
-        allocate(sxs(sc))
-        allocate(sys(sc))
-        allocate(szs(sc))
-        allocate(ssshs(sc))
-        do j = 1, sc
-            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-            if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
-                i_si = i_sp - sal_ct%own_ocean_points
-                ssh = e_ssh(i_si)
-                sx = sal_ct%e_xs(i_si)
-                sy = sal_ct%e_ys(i_si)
-                sz = sal_ct%e_zs(i_si)
-            else
-                i_si = sal_ct%one_d_to_2d_i(i_sp)
-                i_sj = sal_ct%one_d_to_2d_j(i_sp)
-                lat = G%geoLatT(i_si, i_sj)
-                lon = G%geoLonT(i_si, i_sj)
-                colat = 0.5*pi-lat
-                sx = sin(colat)*cos(lon)
-                sy = sin(colat)*sin(lon)
-                sz = cos(colat)
-                ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
-            end if
-            sxs(j) = sx
-            sys(j) = sy
-            szs(j) = sz
-            ssshs(j) = ssh
-        enddo
+        ! allocate(sxs(sc))
+        ! allocate(sys(sc))
+        ! allocate(szs(sc))
+        ! allocate(ssshs(sc))
+        ! do j = 1, sc
+        !     i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+        !     if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
+        !         i_si = i_sp - sal_ct%own_ocean_points
+        !         ssh = e_ssh(i_si)
+        !         sx = sal_ct%e_xs(i_si)
+        !         sy = sal_ct%e_ys(i_si)
+        !         sz = sal_ct%e_zs(i_si)
+        !     else
+        !         i_si = sal_ct%one_d_to_2d_i(i_sp)
+        !         i_sj = sal_ct%one_d_to_2d_j(i_sp)
+        !         lat = G%geoLatT(i_si, i_sj)
+        !         lon = G%geoLonT(i_si, i_sj)
+        !         colat = 0.5*pi-lat
+        !         sx = sin(colat)*cos(lon)
+        !         sy = sin(colat)*sin(lon)
+        !         sz = cos(colat)
+        !         ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
+        !     end if
+        !     sxs(j) = sx
+        !     sys(j) = sy
+        !     szs(j) = sz
+        !     ssshs(j) = ssh
+        ! enddo
         do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
             i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
             i_ti = sal_ct%one_d_to_2d_i(i_tp)
@@ -1729,15 +1729,36 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
             y = sin(colat)*sin(lon)
             z = cos(colat)
             do j = 1, sc             
-                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
-                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
-                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
+                ! call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+                i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+                if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
+                    i_si = i_sp - sal_ct%own_ocean_points
+                    ssh = e_ssh(i_si)
+                    sx = sal_ct%e_xs(i_si)
+                    sy = sal_ct%e_ys(i_si)
+                    sz = sal_ct%e_zs(i_si)
+                else
+                    i_si = sal_ct%one_d_to_2d_i(i_sp)
+                    i_sj = sal_ct%one_d_to_2d_j(i_sp)
+                    lat = G%geoLatT(i_si, i_sj)
+                    lon = G%geoLonT(i_si, i_sj)
+                    colat = 0.5*pi-lat
+                    sx = sin(colat)*cos(lon)
+                    sy = sin(colat)*sin(lon)
+                    sz = cos(colat)
+                    ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
+                end if
+                call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
+                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
+                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
+                ! sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
+                ! sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
             enddo
         enddo
-        deallocate(sxs)
-        deallocate(sys)
-        deallocate(szs)
-        deallocate(ssshs)
+        ! deallocate(sxs)
+        ! deallocate(sys)
+        ! deallocate(szs)
+        ! deallocate(ssshs)
     enddo
     call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute_fmm
