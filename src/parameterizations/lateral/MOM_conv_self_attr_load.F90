@@ -72,6 +72,7 @@ type, public :: SAL_conv_type ; private
     integer :: own_ocean_points ! owned ocean source/target points
     integer :: total_ocean_points
     integer, allocatable :: point_leaf_panel(:) ! which leaf panel contains point i
+    integer :: cluster_thresh
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
@@ -934,7 +935,7 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call log_version(param_file, mdl, version, "")
     call get_param(param_file, mdl, "CONV_SAL_THETA", theta, &
                     "Theta parameter for Convolution SAL Tree Code", units="m m-1", default=0.9)
-    call get_param(param_file, mdl, "CONV_SAL_CLUSTER_SIZE", cluster_thresh, &
+    call get_param(param_file, mdl, "CONV_SAL_CLUSTER_SIZE", sal_ct%cluster_thresh, &
                     "Cluster threshold size for Convolution SAL Tree Code", default=150)
     call get_param(param_file, mdl, "CONV_SAL_INTERP_DEGREE", sal_ct%interp_degree, &
                     "Interpolation degree for Convolution SAL Tree Code", default=2)
@@ -1029,11 +1030,11 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call sum_across_PEs(zg1d, pointcount)
 
     ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, cluster_thresh, pointcount) ! constructs cubed sphere tree
+    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount) ! constructs cubed sphere tree
     max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
     if (sal_ct%use_fmm) then
-        call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, cluster_thresh, count) ! constructs tree of targets
+        call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count) ! constructs tree of targets
         do i = 1, size(sal_ct%tree_struct_targets)
             if (sal_ct%tree_struct_targets(i)%panel_point_count .ne. size(sal_ct%tree_struct_targets(i)%points_inside)) then
                 print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, size(sal_ct%tree_struct_targets(i)%points_inside)
@@ -1048,10 +1049,10 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     ! compute the interaction lists for the target points in the target domain
     if (sal_ct%use_fmm) then
         call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, sal_ct%cc_interactions, &
-                                        sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, cluster_thresh, sal_ct%own_ocean_points)
+                                        sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
     else
         call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
-                                        theta, cluster_thresh, sal_ct%own_ocean_points)
+                                        theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
     endif
     call sync_PEs()
 
@@ -1679,12 +1680,17 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
     real, intent(in) :: e_ssh(:), eta(:,:)
     integer :: i, i_s, i_ti, i_tj, j, i_si, i_sj, i_sp, i_t, id, count, ii, ij, i_tp, k, sc
     real :: pi, lat, lon, colat, x, y, z, sx, sy, sz, ssh, r2, sal_grad_x, sal_grad_y, sal_val
-    ! real, allocatable :: sshs(:), a_s(:), sxs(:), sys(:), szs(:), ssshs(:)
+    real, allocatable :: sxs(:), sys(:), szs(:), ssshs(:)
 
     pi = 4.0*DATAN(1.0)
     r2 = G%Rad_Earth ** 2
 
     call cpu_clock_begin(id_clock_SAL_pp_comp)
+
+    allocate(sxs(sal_ct%cluster_thresh))
+    allocate(sys(sal_ct%cluster_thresh))
+    allocate(szs(sal_ct%cluster_thresh))
+    allocate(ssshs(sal_ct%cluster_thresh))
 
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
@@ -1694,30 +1700,30 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
         ! allocate(sys(sc))
         ! allocate(szs(sc))
         ! allocate(ssshs(sc))
-        ! do j = 1, sc
-        !     i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-        !     if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
-        !         i_si = i_sp - sal_ct%own_ocean_points
-        !         ssh = e_ssh(i_si)
-        !         sx = sal_ct%e_xs(i_si)
-        !         sy = sal_ct%e_ys(i_si)
-        !         sz = sal_ct%e_zs(i_si)
-        !     else
-        !         i_si = sal_ct%one_d_to_2d_i(i_sp)
-        !         i_sj = sal_ct%one_d_to_2d_j(i_sp)
-        !         lat = G%geoLatT(i_si, i_sj)
-        !         lon = G%geoLonT(i_si, i_sj)
-        !         colat = 0.5*pi-lat
-        !         sx = sin(colat)*cos(lon)
-        !         sy = sin(colat)*sin(lon)
-        !         sz = cos(colat)
-        !         ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
-        !     end if
-        !     sxs(j) = sx
-        !     sys(j) = sy
-        !     szs(j) = sz
-        !     ssshs(j) = ssh
-        ! enddo
+        do j = 1, sc
+            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+            if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
+                i_si = i_sp - sal_ct%own_ocean_points
+                ssh = e_ssh(i_si)
+                sx = sal_ct%e_xs(i_si)
+                sy = sal_ct%e_ys(i_si)
+                sz = sal_ct%e_zs(i_si)
+            else
+                i_si = sal_ct%one_d_to_2d_i(i_sp)
+                i_sj = sal_ct%one_d_to_2d_j(i_sp)
+                lat = G%geoLatT(i_si, i_sj)
+                lon = G%geoLonT(i_si, i_sj)
+                colat = 0.5*pi-lat
+                sx = sin(colat)*cos(lon)
+                sy = sin(colat)*sin(lon)
+                sz = cos(colat)
+                ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
+            end if
+            sxs(j) = sx
+            sys(j) = sy
+            szs(j) = sz
+            ssshs(j) = ssh
+        enddo
         do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
             i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
             i_ti = sal_ct%one_d_to_2d_i(i_tp)
@@ -1729,30 +1735,9 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
             y = sin(colat)*sin(lon)
             z = cos(colat)
             do j = 1, sc             
-                ! call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
-                i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-                if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
-                    i_si = i_sp - sal_ct%own_ocean_points
-                    ssh = e_ssh(i_si)
-                    sx = sal_ct%e_xs(i_si)
-                    sy = sal_ct%e_ys(i_si)
-                    sz = sal_ct%e_zs(i_si)
-                else
-                    i_si = sal_ct%one_d_to_2d_i(i_sp)
-                    i_sj = sal_ct%one_d_to_2d_j(i_sp)
-                    lat = G%geoLatT(i_si, i_sj)
-                    lon = G%geoLonT(i_si, i_sj)
-                    colat = 0.5*pi-lat
-                    sx = sin(colat)*cos(lon)
-                    sy = sin(colat)*sin(lon)
-                    sz = cos(colat)
-                    ssh = eta(i_si, i_sj)*G%areaT(i_si, i_sj)/r2
-                end if
-                call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
-                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
-                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
-                ! sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
-                ! sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
+                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
+                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
             enddo
         enddo
         ! deallocate(sxs)
