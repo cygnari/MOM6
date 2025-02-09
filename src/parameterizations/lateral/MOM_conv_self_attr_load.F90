@@ -618,10 +618,10 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
                             cc_count = cc_count + 1
                             interaction_lists_temp(int_count)%interact_type = 3
                         else ! PP
-                            ! pp_count = pp_count + 1
-                            ! interaction_lists_temp(int_count)%interact_type = 0
-                            pc_count = pc_count + 1
-                            interaction_lists_temp(int_count)%interact_type = 1
+                            pp_count = pp_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 0
+                            ! pc_count = pc_count + 1
+                            ! interaction_lists_temp(int_count)%interact_type = 1
                         endif
                     endif
                 else
