@@ -613,11 +613,15 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
                         endif
                     else
                         if (c_t > cluster_thresh) then ! CP
-                            cp_count = cp_count + 1
-                            interaction_lists_temp(int_count)%interact_type = 2
+                            ! cp_count = cp_count + 1
+                            ! interaction_lists_temp(int_count)%interact_type = 2
+                            cc_count = cc_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 3
                         else ! PP
-                            pp_count = pp_count + 1
-                            interaction_lists_temp(int_count)%interact_type = 0
+                            ! pp_count = pp_count + 1
+                            ! interaction_lists_temp(int_count)%interact_type = 0
+                            pc_count = pc_count + 1
+                            interaction_lists_temp(int_count)%interact_type = 1
                         endif
                     endif
                 else
@@ -1687,19 +1691,14 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
 
     call cpu_clock_begin(id_clock_SAL_pp_comp)
 
-    allocate(sxs(sal_ct%cluster_thresh))
-    allocate(sys(sal_ct%cluster_thresh))
-    allocate(szs(sal_ct%cluster_thresh))
-    allocate(ssshs(sal_ct%cluster_thresh))
-
     do i = 1, size(sal_ct%pp_interactions)
         i_s = sal_ct%pp_interactions(i)%index_source
         i_t = sal_ct%pp_interactions(i)%index_target
         sc = sal_ct%tree_struct(i_s)%panel_point_count
-        ! allocate(sxs(sc))
-        ! allocate(sys(sc))
-        ! allocate(szs(sc))
-        ! allocate(ssshs(sc))
+        allocate(sxs(sc))
+        allocate(sys(sc))
+        allocate(szs(sc))
+        allocate(ssshs(sc))
         do j = 1, sc
             i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
             if (i_sp > sal_ct%own_ocean_points) then ! unowned source point
@@ -1740,10 +1739,10 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, eta, sal_x, sal_y, e_ssh)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
             enddo
         enddo
-        ! deallocate(sxs)
-        ! deallocate(sys)
-        ! deallocate(szs)
-        ! deallocate(ssshs)
+        deallocate(sxs)
+        deallocate(sys)
+        deallocate(szs)
+        deallocate(ssshs)
     enddo
     call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute_fmm
