@@ -616,7 +616,6 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
                             ! cp_count = cp_count + 1
                             ! interaction_lists_temp(int_count)%interact_type = 2
                             cc_count = cc_count + 1
-                            interaction_lists_temp(int_count)%interact_type = 3
                         else ! PP
                             pp_count = pp_count + 1
                             interaction_lists_temp(int_count)%interact_type = 0
@@ -758,33 +757,33 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
         enddo
     enddo
 
-    if (sal_ct%use_fmm) then
-        cp_count = size(sal_ct%cp_interactions)
-        do i = 1, cp_count
-            i_s = sal_ct%cp_interactions(i)%index_source
-            do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
-                i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
-                if ((i_sp < isc) .or. (i_sp > iec)) then 
-                    found = .false.
-                    kloop4: do k = 1, unowned_source_count
-                        if (unowned_temp(k) == i_sp) then
-                            found = .true.
-                        endif
-                    enddo kloop4
-                    if (.not. found) then
-                        unowned_source_count = unowned_source_count + 1
-                        unowned_temp(unowned_source_count) = i_sp
-                        kloop5: do k = 1, p
-                            if ((i_sp >= sal_ct%indexsg(k)) .and. (i_sp <= sal_ct%indexeg(k))) then
-                                points_needed_from_proc(k) = points_needed_from_proc(k) + 1
-                                proc_loc(unowned_source_count) = k
-                            end if
-                        enddo kloop5
-                    endif
-                endif
-            enddo
-        enddo
-    endif
+    ! if (sal_ct%use_fmm) then
+    !     cp_count = size(sal_ct%cp_interactions)
+    !     do i = 1, cp_count
+    !         i_s = sal_ct%cp_interactions(i)%index_source
+    !         do j = 1, sal_ct%tree_struct(i_s)%panel_point_count
+    !             i_sp = sal_ct%tree_struct(i_s)%points_inside(j)
+    !             if ((i_sp < isc) .or. (i_sp > iec)) then 
+    !                 found = .false.
+    !                 kloop4: do k = 1, unowned_source_count
+    !                     if (unowned_temp(k) == i_sp) then
+    !                         found = .true.
+    !                     endif
+    !                 enddo kloop4
+    !                 if (.not. found) then
+    !                     unowned_source_count = unowned_source_count + 1
+    !                     unowned_temp(unowned_source_count) = i_sp
+    !                     kloop5: do k = 1, p
+    !                         if ((i_sp >= sal_ct%indexsg(k)) .and. (i_sp <= sal_ct%indexeg(k))) then
+    !                             points_needed_from_proc(k) = points_needed_from_proc(k) + 1
+    !                             proc_loc(unowned_source_count) = k
+    !                         end if
+    !                     enddo kloop5
+    !                 endif
+    !             endif
+    !         enddo
+    !     enddo
+    ! endif
 
     allocate(unowned_sources(unowned_source_count))
     allocate(e_xs(unowned_source_count))
