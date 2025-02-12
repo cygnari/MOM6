@@ -175,7 +175,7 @@ subroutine SAL_init(G, US, param_file, CS)
   logical :: calculate_sal
   logical :: tides, use_tidal_sal_file
   real :: tide_sal_scalar_value ! Scaling SAL factor [nondim]
-  logical :: conv_sht_cor
+  logical :: use_sal_conv
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -220,10 +220,7 @@ subroutine SAL_init(G, US, param_file, CS)
                  "The mean solid earth density.  This is used for calculating the "// &
                  "self-attraction and loading term.", units="kg m-3", &
                  default=5517.0, scale=US%kg_m3_to_R, do_not_log=(.not. CS%use_sal_sht))
-
-  call get_param(param_file, mdl, "CONV_SAL_SHT_COR", conv_sht_cor, &
-                 "Whether or not to use the spherical harmonics SAL to correct for low order errors" //&
-                 "in the convolution based SAL computation", default=.false.)
+  call get_param(param_file, mdl, "SAL_CONVOLUTION", use_sal_conv, "SAL Conv", default=.false., do_not_log=.true.)
 
   if (CS%use_sal_sht) then
     lmax = calc_lmax(CS%sal_sht_Nd)
@@ -231,7 +228,7 @@ subroutine SAL_init(G, US, param_file, CS)
     allocate(CS%Snm_Im(lmax)); CS%Snm_Im(:) = 0.0
 
     allocate(CS%Love_Scaling(lmax)); CS%Love_Scaling(:) = 0.0
-    call calc_love_scaling(CS%sal_sht_Nd, rhoW, rhoE, CS%Love_Scaling, conv_sht_cor)
+    call calc_love_scaling(CS%sal_sht_Nd, rhoW, rhoE, CS%Love_Scaling, use_sal_conv) ! If convolution being used, modify LLNs
 
     allocate(CS%sht)
     call spherical_harmonics_init(G, param_file, CS%sht)

@@ -948,6 +948,8 @@ subroutine sal_conv_init(sal_ct, G, param_file)
                     "Interpolation degree for Convolution SAL Tree Code", default=2)
     call get_param(param_file, mdl, "CONV_SAL_REPRODUCING", sal_ct%reprod_sum, &
                     "Convolution SAL Tree Code Reproducing sum mode", default=.false.)
+    call get_param(param_file, mdl, "SAL_CONVOLUTION", sal_ct%use_sal_conv, &
+                    "Whether or not to use SAL convolution", default=.false.)
     if (.not. sal_ct%reprod_sum) then
         call get_param(param_file, mdl, "CONV_SAL_FMM", sal_ct%use_fmm, &
                     "Convolution SAL FMM mode or not, FMM is incompatible with reproducing sum", default=.true.)
@@ -955,139 +957,140 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         sal_ct%use_fmm = .false.
     endif
 
-    sal_ct%p = num_PEs() ! number of ranks
-    sal_ct%id = PE_here() ! current rank
-    sal_ct%use_sal_conv = .true.
+    if (sal_ct%use_sal_conv) then
+        sal_ct%p = num_PEs() ! number of ranks
+        sal_ct%id = PE_here() ! current rank
 
-    pi = 4.D0*DATAN(1.D0)
+        pi = 4.D0*DATAN(1.D0)
 
-    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-    isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
+        isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+        isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
 
-    ic=iec-isc+1; jc=jec-jsc+1
+        ic=iec-isc+1; jc=jec-jsc+1
 
-    count = 0
-    allocate(sal_ct%two_d_to_1d(ied, jed), source=-1)
-    do j = jsc, jec ! count number of ocean points in computational domain
-        do i = isc, iec
-            if (G%mask2dT(i, j) > 0.1) then
-                count = count + 1
-                sal_ct%two_d_to_1d(i, j) = count
-            endif
+        count = 0
+        allocate(sal_ct%two_d_to_1d(ied, jed), source=-1)
+        do j = jsc, jec ! count number of ocean points in computational domain
+            do i = isc, iec
+                if (G%mask2dT(i, j) > 0.1) then
+                    count = count + 1
+                    sal_ct%two_d_to_1d(i, j) = count
+                endif
+            enddo
         enddo
-    enddo
-    allocate(sal_ct%one_d_to_2d_i(count))
-    allocate(sal_ct%one_d_to_2d_j(count))
-    allocate(xc1d(count), source=0.0)
-    allocate(yc1d(count), source=0.0)
-    allocate(zc1d(count), source=0.0)
-    sal_ct%own_ocean_points = count
+        allocate(sal_ct%one_d_to_2d_i(count))
+        allocate(sal_ct%one_d_to_2d_j(count))
+        allocate(xc1d(count), source=0.0)
+        allocate(yc1d(count), source=0.0)
+        allocate(zc1d(count), source=0.0)
+        sal_ct%own_ocean_points = count
 
-    count = 0
-    do j = jsc, jec
-        do i = isc, iec
-            if (G%mask2dT(i, j) > 0.1) then
-                count = count + 1
-                lat = G%geoLatT(i, j) * pi/180.0
-                lon = G%geoLonT(i, j) * pi/180.0
-                colat = 0.5*pi-lat
-                x = sin(colat)*cos(lon)
-                y = sin(colat)*sin(lon)
-                z = cos(colat)
+        count = 0
+        do j = jsc, jec
+            do i = isc, iec
+                if (G%mask2dT(i, j) > 0.1) then
+                    count = count + 1
+                    lat = G%geoLatT(i, j) * pi/180.0
+                    lon = G%geoLonT(i, j) * pi/180.0
+                    colat = 0.5*pi-lat
+                    x = sin(colat)*cos(lon)
+                    y = sin(colat)*sin(lon)
+                    z = cos(colat)
 
-                xc1d(count) = x
-                yc1d(count) = y
-                zc1d(count) = z
-                sal_ct%one_d_to_2d_i(count) = i
-                sal_ct%one_d_to_2d_j(count) = j
-            end if
+                    xc1d(count) = x
+                    yc1d(count) = y
+                    zc1d(count) = z
+                    sal_ct%one_d_to_2d_i(count) = i
+                    sal_ct%one_d_to_2d_j(count) = j
+                end if
+            enddo
         enddo
-    enddo
 
-    allocate(pcg(sal_ct%p), source=0)
-    allocate(indexsg(sal_ct%p), source=0)
-    allocate(indexeg(sal_ct%p), source=0)
-    pcg(sal_ct%id+1) = count
-    call sum_across_PEs(pcg, sal_ct%p)
+        allocate(pcg(sal_ct%p), source=0)
+        allocate(indexsg(sal_ct%p), source=0)
+        allocate(indexeg(sal_ct%p), source=0)
+        pcg(sal_ct%id+1) = count
+        call sum_across_PEs(pcg, sal_ct%p)
 
-    indexsg(1) = 1
-    do i = 1, sal_ct%p-1
-        indexeg(i)=indexsg(i)-1+pcg(i)
-        indexsg(i+1)=indexeg(i)+1
-    enddo
-    indexeg(sal_ct%p) = indexsg(sal_ct%p)+pcg(sal_ct%p)-1
-
-    sal_ct%indexsg = indexsg
-    sal_ct%indexeg = indexeg
-    sal_ct%pcg = pcg
-
-    pointcount = 0
-    do i = 1, sal_ct%p
-        pointcount = pointcount + pcg(i)
-    enddo
-    sal_ct%total_ocean_points = pointcount
-
-    allocate(xg1d(pointcount), source=0.0)
-    allocate(yg1d(pointcount), source=0.0)
-    allocate(zg1d(pointcount), source=0.0)
-    xg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = xc1d(:)
-    yg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = yc1d(:)
-    zg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = zc1d(:)
-    call sum_across_PEs(xg1d, pointcount) ! potentially a problem at high resolution, memory issues
-    call sum_across_PEs(yg1d, pointcount)
-    call sum_across_PEs(zg1d, pointcount)
-
-    ! xg/yg/zg is now a copy of all the points from all the processors
-    call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount) ! constructs cubed sphere tree
-    max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
-
-    if (sal_ct%use_fmm) then
-        call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count) ! constructs tree of targets
-        do i = 1, size(sal_ct%tree_struct_targets)
-            if (sal_ct%tree_struct_targets(i)%panel_point_count .ne. size(sal_ct%tree_struct_targets(i)%points_inside)) then
-                print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, size(sal_ct%tree_struct_targets(i)%points_inside)
-            endif
+        indexsg(1) = 1
+        do i = 1, sal_ct%p-1
+            indexeg(i)=indexsg(i)-1+pcg(i)
+            indexsg(i+1)=indexeg(i)+1
         enddo
+        indexeg(sal_ct%p) = indexsg(sal_ct%p)+pcg(sal_ct%p)-1
+
+        sal_ct%indexsg = indexsg
+        sal_ct%indexeg = indexeg
+        sal_ct%pcg = pcg
+
+        pointcount = 0
+        do i = 1, sal_ct%p
+            pointcount = pointcount + pcg(i)
+        enddo
+        sal_ct%total_ocean_points = pointcount
+
+        allocate(xg1d(pointcount), source=0.0)
+        allocate(yg1d(pointcount), source=0.0)
+        allocate(zg1d(pointcount), source=0.0)
+        xg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = xc1d(:)
+        yg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = yc1d(:)
+        zg1d(indexsg(sal_ct%id+1):indexeg(sal_ct%id+1)) = zc1d(:)
+        call sum_across_PEs(xg1d, pointcount) ! potentially a problem at high resolution, memory issues
+        call sum_across_PEs(yg1d, pointcount)
+        call sum_across_PEs(zg1d, pointcount)
+
+        ! xg/yg/zg is now a copy of all the points from all the processors
+        call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount) ! constructs cubed sphere tree
+        max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
+
+        if (sal_ct%use_fmm) then
+            call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count) ! constructs tree of targets
+            do i = 1, size(sal_ct%tree_struct_targets)
+                if (sal_ct%tree_struct_targets(i)%panel_point_count .ne. size(sal_ct%tree_struct_targets(i)%points_inside)) then
+                    print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, size(sal_ct%tree_struct_targets(i)%points_inside)
+                endif
+            enddo
+        endif
+
+        allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
+        ! finds which panels contain the computational domain points
+        call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level, sal_ct%point_leaf_panel) 
+
+        ! compute the interaction lists for the target points in the target domain
+        if (sal_ct%use_fmm) then
+            call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, sal_ct%cc_interactions, &
+                                            sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
+        else
+            call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
+                                            theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
+        endif
+        call sync_PEs()
+
+        ! compute communication patterns 
+        call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
+
+        do i = 1, sal_ct%own_ocean_points
+            sal_ct%e_xs(i) = xc1d(i)
+            sal_ct%e_ys(i) = yc1d(i)
+            sal_ct%e_zs(i) = zc1d(i)
+        enddo
+
+        id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
+        id_clock_SAL_ssh_comm = cpu_clock_id('(Ocean SAL SSH communication)', grain=CLOCK_MODULE)
+        
+        if (sal_ct%use_fmm) then
+            id_clock_SAL_fmm = cpu_clock_id('(Ocean SAL FMM)', grain=CLOCK_MODULE)
+            id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
+            id_clock_SAL_downward_pass = cpu_clock_id('(Ocean SAL downward pass)', grain=CLOCK_MODULE)
+            id_clock_SAL_cc_comp = cpu_clock_id('(Ocean SAL CC interaction comp)', grain=CLOCK_MODULE)
+            id_clock_SAL_cp_comp = cpu_clock_id('(Ocean SAL CP interaction comp)', grain=CLOCK_MODULE)
+        else
+            id_clock_SAL_tc = cpu_clock_id('(Ocean SAL Tree Code)', grain=CLOCK_MODULE)
+            id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
+        endif
+        id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
+        id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
     endif
-
-    allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
-    ! finds which panels contain the computational domain points
-    call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level, sal_ct%point_leaf_panel) 
-
-    ! compute the interaction lists for the target points in the target domain
-    if (sal_ct%use_fmm) then
-        call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, sal_ct%cc_interactions, &
-                                        sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
-    else
-        call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
-                                        theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
-    endif
-    call sync_PEs()
-
-    ! compute communication patterns 
-    call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
-
-    do i = 1, sal_ct%own_ocean_points
-        sal_ct%e_xs(i) = xc1d(i)
-        sal_ct%e_ys(i) = yc1d(i)
-        sal_ct%e_zs(i) = zc1d(i)
-    enddo
-
-    id_clock_SAL = cpu_clock_id('(Ocean SAL)', grain=CLOCK_MODULE)
-    id_clock_SAL_ssh_comm = cpu_clock_id('(Ocean SAL SSH communication)', grain=CLOCK_MODULE)
-    
-    if (sal_ct%use_fmm) then
-        id_clock_SAL_fmm = cpu_clock_id('(Ocean SAL FMM)', grain=CLOCK_MODULE)
-        id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
-        id_clock_SAL_downward_pass = cpu_clock_id('(Ocean SAL downward pass)', grain=CLOCK_MODULE)
-        id_clock_SAL_cc_comp = cpu_clock_id('(Ocean SAL CC interaction comp)', grain=CLOCK_MODULE)
-        id_clock_SAL_cp_comp = cpu_clock_id('(Ocean SAL CP interaction comp)', grain=CLOCK_MODULE)
-    else
-        id_clock_SAL_tc = cpu_clock_id('(Ocean SAL Tree Code)', grain=CLOCK_MODULE)
-        id_clock_SAL_upward_pass = cpu_clock_id('(Ocean SAL Upward Pass)', grain=CLOCK_MODULE)
-    endif
-    id_clock_SAL_pc_comp = cpu_clock_id('(Ocean SAL PC interaction comp)', grain=CLOCK_MODULE)
-    id_clock_SAL_pp_comp = cpu_clock_id('(Ocean SAL PP interaction comp)', grain=CLOCK_MODULE)
 end subroutine sal_conv_init
 
 subroutine ssh_communications(sal_ct, G, eta, e_ssh)
@@ -1774,70 +1777,72 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
     real, allocatable :: e_ssh(:), proxy_source_weights(:), proxy_target_weights_x(:,:,:), proxy_target_weights_y(:,:,:)
     integer :: source_size, target_weights, i, id
 
-    call cpu_clock_begin(id_clock_SAL)
+    if (sal_ct%use_sal_conv) then
+        call cpu_clock_begin(id_clock_SAL)
 
-    sal_x(:,:) = 0.0
-    sal_y(:,:) = 0.0
-    id = PE_here()
+        sal_x(:,:) = 0.0
+        sal_y(:,:) = 0.0
+        id = PE_here()
 
-    if (sal_ct%use_fmm) then ! fmm with upward and downward pass
-        call cpu_clock_begin(id_clock_SAL_fmm)
-        ! compute proxy source weights
-        source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
-        target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
-        allocate(proxy_source_weights(source_size), source=0.0)
-        allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
-        allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
-        ! do SSH communication needed for interactions
-        allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
-        call ssh_communications(sal_ct, G, eta, e_ssh)
-        ! upward pass
-        call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
-
-        ! perform PC and CC interactions
-        call cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_weights_x, proxy_target_weights_y)
-        call pc_interaction_compute_fmm(sal_ct, G, proxy_source_weights, sal_x, sal_y)
-        
-        call cp_interaction_compute(sal_ct, G, eta, e_ssh, proxy_target_weights_x, proxy_target_weights_y)
-        ! downward pass
-        call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
-        ! compute PP interactions for target domain
-        call pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
-        call cpu_clock_end(id_clock_SAL_fmm)
-    else ! standard tree code
-        call cpu_clock_begin(id_clock_SAL_tc)
-        ! compute proxy source weights for computational domain
-        source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
-        allocate(proxy_source_weights(source_size), source=0.0)
-        ! do SSH communication needed for interactions
-        allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
-        call ssh_communications(sal_ct, G, eta, e_ssh)
-        if (sal_ct%reprod_sum) then
-            call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
-        else
+        if (sal_ct%use_fmm) then ! fmm with upward and downward pass
+            call cpu_clock_begin(id_clock_SAL_fmm)
+            ! compute proxy source weights
+            source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
+            target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
+            allocate(proxy_source_weights(source_size), source=0.0)
+            allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
+            allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
+            ! do SSH communication needed for interactions
+            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
+            call ssh_communications(sal_ct, G, eta, e_ssh)
+            ! upward pass
             call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+
+            ! perform PC and CC interactions
+            call cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_weights_x, proxy_target_weights_y)
+            call pc_interaction_compute_fmm(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+            
+            call cp_interaction_compute(sal_ct, G, eta, e_ssh, proxy_target_weights_x, proxy_target_weights_y)
+            ! downward pass
+            call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
+            ! compute PP interactions for target domain
+            call pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
+            call cpu_clock_end(id_clock_SAL_fmm)
+        else ! standard tree code
+            call cpu_clock_begin(id_clock_SAL_tc)
+            ! compute proxy source weights for computational domain
+            source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
+            allocate(proxy_source_weights(source_size), source=0.0)
+            ! do SSH communication needed for interactions
+            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
+            call ssh_communications(sal_ct, G, eta, e_ssh)
+            if (sal_ct%reprod_sum) then
+                call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
+            else
+                call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+            endif
+
+            ! if (id == 0) then ! testing for reproducing sum
+            !     do i = 1, size(proxy_source_weights)
+            !         print *, proxy_source_weights(i)
+            !     enddo
+            ! endif
+
+            ! compute PC interactions for target domain
+            call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+
+            ! compute PP interactions for target domain
+            call pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
+            call cpu_clock_end(id_clock_SAL_tc)
         endif
 
-        ! if (id == 0) then ! testing for reproducing sum
-        !     do i = 1, size(proxy_source_weights)
-        !         print *, proxy_source_weights(i)
-        !     enddo
-        ! endif
+        call sync_PEs()
 
-        ! compute PC interactions for target domain
-        call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+        call pass_var(sal_x, G%domain) ! halo update 
+        call pass_var(sal_y, G%domain) ! halo update 
 
-        ! compute PP interactions for target domain
-        call pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
-        call cpu_clock_end(id_clock_SAL_tc)
+        call cpu_clock_end(id_clock_SAL)
     endif
-
-    call sync_PEs()
-
-    call pass_var(sal_x, G%domain) ! halo update 
-    call pass_var(sal_y, G%domain) ! halo update 
-
-    call cpu_clock_end(id_clock_SAL)
 end subroutine sal_conv_eval
 
 subroutine sal_conv_end(sal_ct)
