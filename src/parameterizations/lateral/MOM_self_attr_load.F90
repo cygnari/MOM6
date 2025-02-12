@@ -118,11 +118,12 @@ end subroutine scalar_SAL_sensitivity
 !> This subroutine calculates coefficients of the spherical harmonic modes for self-attraction and loading.
 !! The algorithm is based on the SAL implementation in MPAS-ocean, which was modified by Kristin Barton from
 !! routine written by K. Quinn (March 2010) and modified by M. Schindelegger (May 2017).
-subroutine calc_love_scaling(nlm, rhoW, rhoE, Love_Scaling)
+subroutine calc_love_scaling(nlm, rhoW, rhoE, Love_Scaling, conv_correction)
   integer, intent(in) :: nlm  !< Maximum spherical harmonics degree [nondim]
   real,    intent(in) :: rhoW !< The average density of sea water [R ~> kg m-3]
   real,    intent(in) :: rhoE !< The average density of Earth [R ~> kg m-3]
   real, dimension(:), intent(out) :: Love_Scaling !< Scaling factors for inverse SHT [nondim]
+  logical, intent(in) :: conv_correction
 
   ! Local variables
   real, dimension(:), allocatable :: HDat, LDat, KDat ! Love numbers converted in CF reference frames [nondim]
@@ -149,7 +150,11 @@ subroutine calc_love_scaling(nlm, rhoW, rhoE, Love_Scaling)
 
   do m=0,nlm ; do n=m,nlm
     l = order2index(m,nlm)
-    Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + KDat(n+1) - HDat(n+1))
+    if (conv_correction) then
+      Love_Scaling(l+n-m) = (3.0/real(2*n+1))*(rhoW/rhoE)*((n*KDat(n+1)+2.7)-(n*Hdat(n+1)+6.21196*n-6.12))/real(1*n)
+    else
+      Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + KDat(n+1) - HDat(n+1))
+    endif
   enddo ; enddo
 end subroutine calc_love_scaling
 
@@ -170,6 +175,7 @@ subroutine SAL_init(G, US, param_file, CS)
   logical :: calculate_sal
   logical :: tides, use_tidal_sal_file
   real :: tide_sal_scalar_value ! Scaling SAL factor [nondim]
+  logical :: conv_sht_cor
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -215,13 +221,17 @@ subroutine SAL_init(G, US, param_file, CS)
                  "self-attraction and loading term.", units="kg m-3", &
                  default=5517.0, scale=US%kg_m3_to_R, do_not_log=(.not. CS%use_sal_sht))
 
+  call get_param(param_file, mdl, "CONV_SAL_SHT_COR", conv_sht_cor, &
+                 "Whether or not to use the spherical harmonics SAL to correct for low order errors" //&
+                 "in the convolution based SAL computation", default=.false.)
+
   if (CS%use_sal_sht) then
     lmax = calc_lmax(CS%sal_sht_Nd)
     allocate(CS%Snm_Re(lmax)); CS%Snm_Re(:) = 0.0
     allocate(CS%Snm_Im(lmax)); CS%Snm_Im(:) = 0.0
 
     allocate(CS%Love_Scaling(lmax)); CS%Love_Scaling(:) = 0.0
-    call calc_love_scaling(CS%sal_sht_Nd, rhoW, rhoE, CS%Love_Scaling)
+    call calc_love_scaling(CS%sal_sht_Nd, rhoW, rhoE, CS%Love_Scaling, conv_sht_cor)
 
     allocate(CS%sht)
     call spherical_harmonics_init(G, param_file, CS%sht)

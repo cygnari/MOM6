@@ -43,7 +43,7 @@ use MOM_barotropic,            only : barotropic_end
 use MOM_boundary_update,       only : update_OBC_data, update_OBC_CS
 use MOM_continuity,            only : continuity, continuity_CS
 use MOM_continuity,            only : continuity_init, continuity_stencil
-use MOM_conv_self_attr_load,   only : SAL_conv_type, sal_conv_init
+use MOM_conv_self_attr_load,   only : SAL_conv_type, sal_conv_init, sal_conv_end
 use MOM_CoriolisAdv,           only : CorAdCalc, CoriolisAdv_CS
 use MOM_CoriolisAdv,           only : CoriolisAdv_init, CoriolisAdv_end
 use MOM_debugging,             only : check_redundant
@@ -165,6 +165,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
                                   !! predictor step.  This is used to accomodate various generations
                                   !! of restart files.
   logical :: calculate_SAL        !< If true, calculate self-attraction and loading.
+  
   logical :: use_tides            !< If true, tidal forcing is enabled.
   logical :: remap_aux            !< If true, apply ALE remapping to all of the auxiliary 3-D
                                   !! variables that are needed to reproduce across restarts,
@@ -1477,7 +1478,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
-  ! if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp) ! sph harm SAL
+  if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp) ! sph harm SAL
   if (CS%calculate_SAL) call sal_conv_init(CS%SAL_convCSp, G, param_file) ! convolution SAL
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
@@ -1809,7 +1810,8 @@ subroutine end_dyn_split_RK2(CS)
   deallocate(CS%vertvisc_CSp)
 
   call hor_visc_end(CS%hor_visc)
-  ! if (CS%calculate_SAL) call SAL_end(CS%SAL_CSp)
+  if (CS%calculate_SAL) call SAL_end(CS%SAL_CSp)
+  if (CS%calculate_SAL) call sal_conv_end(CS%SAL_convCSp)
   if (CS%use_tides) call tidal_forcing_end(CS%tides_CSp)
   call CoriolisAdv_end(CS%CoriolisAdv)
 

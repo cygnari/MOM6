@@ -203,29 +203,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   alpha_ref = 1.0 / CS%Rho0
   I_gEarth = 1.0 / GV%g_Earth
 
-  ! if (use_p_atm) then
-  !   !$OMP parallel do default(shared)
-  !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-  !   ! do j = jsd,jed; do i=isd,ied
-  !   ! do j = jsdb, jedb; do i = isdb, iedb
-  !     p(i,j,1) = p_atm(i,j)
-  !   enddo ; enddo
-  ! else
-  !   ! oneatm = 101325.0 * US%Pa_to_RL2_T2 ! 1 atm scaled to [R L2 T-2 ~> Pa]
-  !   !$OMP parallel do default(shared)
-  !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-  !   ! do j = jsd,jed; do i=isd,ied
-  !   ! do j = jsdb, jedb; do i = isdb, iedb
-  !     p(i,j,1) = 0.0 ! or oneatm
-  !   enddo ; enddo
-  ! endif
-
-  ! !$OMP parallel do default(shared)
-  ! do j=Jsq,Jeq+1 ; do k=2,nz+1 ; do i=Isq,Ieq+1
-  ! ! do j = jsd,jed; do k = 2,nz+1; do i=isd,ied
-  ! ! do j = jsdb, jedb; do k = 2,nz+1; do i = isdb, iedb
-  !   p(i,j,K) = p(i,j,K-1) + H_to_RL2_T2 * h(i,j,k-1)
-  ! enddo ; enddo ; enddo
   if (use_p_atm) then
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
@@ -349,49 +326,46 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   if (CS%calculate_SAL) then
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    ! do j=jsd,jed; do i = isd,ied
-    ! do j=jsdb, jedb; do i=isdb, iedb
       SSH(i,j) = (za(i,j) - alpha_ref*p(i,j,1)) * I_gEarth - G%Z_ref &
                  - max(-G%bathyT(i,j)-G%Z_ref, 0.0)
     enddo ; enddo
-    ! call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-    call sal_conv_eval(CS%SAL_ConvCSp, G, SSH, e_sal, e_sal_x, e_sal_y)
+    call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+    call sal_conv_eval(CS%SAL_ConvCSp, G, SSH, e_sal_x, e_sal_y)
 
     do j = Jsq,Jeq+1 ; do i=Isq,Ieq+1
       e_sal_x(i, j) = e_sal_x(i, j)*GV%g_Earth
       e_sal_y(i, j) = e_sal_y(i, j)*GV%g_Earth
-      e_sal(i, j) = e_sal(i, j)*GV%g_Earth
     enddo ; enddo
 
     ! call hchksum(e_sal_x, "SAL x derivative", G%HI, haloshift=1)
     ! call hchksum(e_sal_y, "SAL y derivative", G%HI, haloshift=1)
     ! call hchksum(e_sal, "SAL potential", G%HI, haloshift=1)
 
-    ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
-    !   !$OMP parallel do default(shared)
-    !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    !     za(i,j) = za(i,j) - GV%g_Earth * e_sal(i,j)
-    !   enddo ; enddo
-    ! endif
+    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        za(i,j) = za(i,j) - GV%g_Earth * e_sal(i,j)
+      enddo ; enddo
+    endif
   endif
 
   ! Calculate and add the tidal geopotential anomaly.
   if (CS%tides) then
-    ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq)) then
-    call calc_tidal_forcing(CS%Time, e_tide_eq, e_tide_sal, G, US, CS%tides_CSp)
-    !$OMP parallel do default(shared)
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      za(i,j) = za(i,j) - GV%g_Earth * (e_tide_eq(i,j) + e_tide_sal(i,j))
-    enddo ; enddo
-    ! else  ! This block recreates older answers with tides.
-    !   if (.not.CS%calculate_SAL) e_sal(:,:) = 0.0
-    !   call calc_tidal_forcing_legacy(CS%Time, e_sal, e_sal_tide, e_tide_eq, e_tide_sal, &
-    !                                  G, US, CS%tides_CSp)
-    !   !$OMP parallel do default(shared)
-    !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    !     za(i,j) = za(i,j) - GV%g_Earth * e_sal_tide(i,j)
-    !   enddo ; enddo
-    ! endif
+    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq)) then
+      call calc_tidal_forcing(CS%Time, e_tide_eq, e_tide_sal, G, US, CS%tides_CSp)
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        za(i,j) = za(i,j) - GV%g_Earth * (e_tide_eq(i,j) + e_tide_sal(i,j))
+      enddo ; enddo
+    else  ! This block recreates older answers with tides.
+      if (.not.CS%calculate_SAL) e_sal(:,:) = 0.0
+      call calc_tidal_forcing_legacy(CS%Time, e_sal, e_sal_tide, e_tide_eq, e_tide_sal, &
+                                     G, US, CS%tides_CSp)
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        za(i,j) = za(i,j) - GV%g_Earth * e_sal_tide(i,j)
+      enddo ; enddo
+    endif
   endif
 
   if (CS%GFS_scale < 1.0) then
