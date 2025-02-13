@@ -1777,11 +1777,12 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
     real, allocatable :: e_ssh(:), proxy_source_weights(:), proxy_target_weights_x(:,:,:), proxy_target_weights_y(:,:,:)
     integer :: source_size, target_weights, i, id
 
+    sal_x(:,:) = 0.0
+    sal_y(:,:) = 0.0
+
     if (sal_ct%use_sal_conv) then
         call cpu_clock_begin(id_clock_SAL)
-
-        sal_x(:,:) = 0.0
-        sal_y(:,:) = 0.0
+        
         id = PE_here()
 
         if (sal_ct%use_fmm) then ! fmm with upward and downward pass
@@ -1838,11 +1839,10 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
 
         call sync_PEs()
 
-        call pass_var(sal_x, G%domain) ! halo update 
-        call pass_var(sal_y, G%domain) ! halo update 
-
         call cpu_clock_end(id_clock_SAL)
     endif
+    call pass_var(sal_x, G%domain) ! halo update 
+    call pass_var(sal_y, G%domain) ! halo update 
 end subroutine sal_conv_eval
 
 subroutine sal_conv_end(sal_ct)
