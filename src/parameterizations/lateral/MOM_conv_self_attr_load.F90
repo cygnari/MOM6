@@ -1047,22 +1047,25 @@ subroutine sal_conv_init(sal_ct, G, param_file)
             call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count) ! constructs tree of targets
             do i = 1, size(sal_ct%tree_struct_targets)
                 if (sal_ct%tree_struct_targets(i)%panel_point_count .ne. size(sal_ct%tree_struct_targets(i)%points_inside)) then
-                    print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, size(sal_ct%tree_struct_targets(i)%points_inside)
+                    print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, &
+                                size(sal_ct%tree_struct_targets(i)%points_inside)
                 endif
             enddo
         endif
 
         allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
         ! finds which panels contain the computational domain points
-        call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, max_level, sal_ct%point_leaf_panel) 
+        call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, &
+                                        max_level, sal_ct%point_leaf_panel) 
 
         ! compute the interaction lists for the target points in the target domain
         if (sal_ct%use_fmm) then
-            call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, sal_ct%cc_interactions, &
-                                            sal_ct%tree_struct, sal_ct%tree_struct_targets, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
-        else
-            call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, yc1d, zc1d, &
+            call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, &
+                                            sal_ct%cc_interactions, sal_ct%tree_struct, sal_ct%tree_struct_targets, &
                                             theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
+        else
+            call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, &
+                                            yc1d, zc1d, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
         endif
         call sync_PEs()
 
@@ -1331,7 +1334,8 @@ subroutine proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights) !
             offset1 = 0
             do j = 1, sal_ct%interp_degree+1
                 do k = 1, sal_ct%interp_degree+1
-                    call interp_vals_bli(basis_vals, xi_vals(k), eta_vals(j), min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+                    call interp_vals_bli(basis_vals, xi_vals(k), eta_vals(j), min_xi_p, max_xi_p, min_eta_p, &
+                                            max_eta_p, sal_ct%interp_degree)
                     offset = 0
                     offset1 = offset1+1
                     val = proxy_source_weights(shift1+offset1)
@@ -1562,8 +1566,10 @@ subroutine cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_wei
                         call xyz_from_xieta(s_x, s_y, s_z, x_s, e_s, sal_ct%tree_struct(i_s)%face)
                         offset_s = offset_s + 1
                         call sal_grad_gfunc(t_x, t_y, t_z, s_x, s_y, s_z, sal_grad_x, sal_grad_y)
-                        proxy_target_weights_x(m,j,i_t) = proxy_target_weights_x(m,j,i_t) + proxy_source_weights(shift_s+offset_s)*sal_grad_x
-                        proxy_target_weights_y(m,j,i_t) = proxy_target_weights_y(m,j,i_t) + proxy_source_weights(shift_s+offset_s)*sal_grad_y
+                        proxy_target_weights_x(m,j,i_t) = proxy_target_weights_x(m,j,i_t) + &
+                                                proxy_source_weights(shift_s+offset_s)*sal_grad_x
+                        proxy_target_weights_y(m,j,i_t) = proxy_target_weights_y(m,j,i_t) + &
+                                                proxy_source_weights(shift_s+offset_s)*sal_grad_y
                     enddo
                 enddo
             enddo
@@ -1791,8 +1797,10 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
             source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
             target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
             allocate(proxy_source_weights(source_size), source=0.0)
-            allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
-            allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, size(sal_ct%tree_struct_targets)), source=0.0)
+            allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
+                        size(sal_ct%tree_struct_targets)), source=0.0)
+            allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
+                        size(sal_ct%tree_struct_targets)), source=0.0)
             ! do SSH communication needed for interactions
             allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
             call ssh_communications(sal_ct, G, eta, e_ssh)
@@ -1881,9 +1889,12 @@ subroutine sal_conv_end(sal_ct)
             if (allocated(sal_ct%cc_interactions)) deallocate(sal_ct%cc_interactions)
 
             do i = 1, size(sal_ct%tree_struct_targets)
-                if (allocated(sal_ct%tree_struct_targets(i)%child_panels)) deallocate(sal_ct%tree_struct_targets(i)%child_panels)
-                if (allocated(sal_ct%tree_struct_targets(i)%points_inside)) deallocate(sal_ct%tree_struct_targets(i)%points_inside)
-                if (allocated(sal_ct%tree_struct_targets(i)%relabeled_points_inside)) deallocate(sal_ct%tree_struct_targets(i)%relabeled_points_inside)
+                if (allocated(sal_ct%tree_struct_targets(i)%child_panels)) &
+                    deallocate(sal_ct%tree_struct_targets(i)%child_panels)
+                if (allocated(sal_ct%tree_struct_targets(i)%points_inside)) &
+                    deallocate(sal_ct%tree_struct_targets(i)%points_inside)
+                if (allocated(sal_ct%tree_struct_targets(i)%relabeled_points_inside)) &
+                    deallocate(sal_ct%tree_struct_targets(i)%relabeled_points_inside)
             enddo
 
             if (allocated(sal_ct%tree_struct_targets)) deallocate(sal_ct%tree_struct_targets)

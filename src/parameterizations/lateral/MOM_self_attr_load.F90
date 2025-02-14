@@ -152,7 +152,7 @@ subroutine calc_love_scaling(nlm, rhoW, rhoE, Love_Scaling, conv_correction)
     l = order2index(m,nlm)
     if (conv_correction) then
       if (n > 0) then
-        Love_Scaling(l+n-m) = (3.0/real(2*n+1))*(rhoW/rhoE)*((n*KDat(n+1)+2.7)-(n*Hdat(n+1)+6.21196*n-6.12))/real(1*n)
+        Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + Kdat(n+1)-HDat(n+1)-1.0/3.0*(1.0-6.21196-(2.7-6.12)/n))
       else
         Love_Scaling(l+n-m) = 0.0
       endif
