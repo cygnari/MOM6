@@ -150,15 +150,15 @@ subroutine calc_love_scaling(nlm, rhoW, rhoE, Love_Scaling, conv_correction)
 
   do m=0,nlm ; do n=m,nlm
     l = order2index(m,nlm)
-    ! if (conv_correction) then
-    !   if (n > 0) then
-    !     Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + Kdat(n+1)-HDat(n+1)-1.0/3.0*(1.0-6.21196-(2.7-6.12)/n))
-    !   else
-    !     Love_Scaling(l+n-m) = 0.0
-    !   endif
-    ! else
-    Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + KDat(n+1) - HDat(n+1))
-    ! endif
+    if (conv_correction) then
+      if (n > 0) then
+        Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + Kdat(n+1)-HDat(n+1)-1.0/3.0*(1.0-6.21196-(2.7-6.12)/n))
+      else
+        Love_Scaling(l+n-m) = 0.0
+      endif
+    else
+      Love_Scaling(l+n-m) = (3.0 / real(2*n+1)) * (rhoW / rhoE) * (1.0 + KDat(n+1) - HDat(n+1))
+    endif
   enddo ; enddo
 end subroutine calc_love_scaling
 
