@@ -1415,7 +1415,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    cons = -7.029770573725803e-9/3.0 ! modify this
+    cons = -7.029770573725803e-9/2.0 ! modify this
     eps=1e-4
 
     sal_x = 0.0
