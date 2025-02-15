@@ -1829,11 +1829,11 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
             ! do SSH communication needed for interactions
             allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
             call ssh_communications(sal_ct, G, eta, e_ssh)
-            if (sal_ct%reprod_sum) then
-                call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
-            else
-                call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
-            endif
+            ! if (sal_ct%reprod_sum) then
+            !     call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
+            ! else
+            !     call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+            ! endif
 
             ! if (id == 0) then ! testing for reproducing sum
             !     do i = 1, size(proxy_source_weights)
@@ -1842,7 +1842,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
             ! endif
 
             ! compute PC interactions for target domain
-            call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+            ! call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
 
             ! compute PP interactions for target domain
             call pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
