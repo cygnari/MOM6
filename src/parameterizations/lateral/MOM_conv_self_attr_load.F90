@@ -268,6 +268,28 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels_temp(loc)%points_inside(curr_loc(loc)) = i
     enddo
 
+    ! shrink panels
+    do i = 1, panel_count
+        index = tree_panels_temp(i)%points_inside(1)
+        min_xi = point_xi(index)
+        max_xi = point_xi(index)
+        min_eta = point_eta(index)
+        max_eta = point_eta(index)
+        do j = 1, tree_panels_temp(i)%panel_point_count
+            index = tree_panels_temp(i)%points_inside(j)
+            min_xi = min(min_xi, point_xi(index))
+            max_xi = max(max_xi, point_xi(index))
+            min_eta = min(min_eta, point_eta(index))
+            max_eta = max(max_eta, point_eta(index))
+        enddo
+        tree_panels_temp(i)%min_xi = min_xi-1e-15
+        tree_panels_temp(i)%max_xi = max_xi+1e-15
+        tree_panels_temp(i)%mid_xi = 0.5*(min_xi + max_xi)
+        tree_panels_temp(i)%min_eta = min_eta-1e-15
+        tree_panels_temp(i)%max_eta = max_eta+1e-15
+        tree_panels_temp(i)%mid_eta = 0.5*(min_eta + max_eta)
+    enddo
+
     i = 1
     deallocate(panel_points)
     allocate(panel_points(4), source=0)
@@ -368,6 +390,27 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
                 tree_panels_temp(panel_count+loc)%points_inside(curr_loc(loc)) = tree_panels_temp(i)%points_inside(j)
             END DO
 
+            do j = 1, kids ! shrink panels
+                index = tree_panels_temp(panel_count+loc)%points_inside(1)
+                min_xi = point_xi(index)
+                max_xi = point_xi(index)
+                min_eta = point_eta(index)
+                max_eta = point_eta(index)
+                do k = 1, tree_panels_temp(panel_count+loc)%panel_point_count
+                    index = tree_panels_temp(panel_count+loc)%points_inside(k)
+                    min_xi = min(min_xi, point_xi(index))
+                    max_xi = max(max_xi, point_xi(index))
+                    min_eta = min(min_eta, point_eta(index))
+                    max_eta = max(max_eta, point_eta(index))
+                enddo
+                tree_panels_temp(panel_count+loc)%min_xi = min_xi-1e-15
+                tree_panels_temp(panel_count+loc)%max_xi = max_xi+1e-15
+                tree_panels_temp(panel_count+loc)%mid_xi = 0.5*(min_xi + max_xi)
+                tree_panels_temp(panel_count+loc)%min_eta = min_eta-1e-15
+                tree_panels_temp(panel_count+loc)%max_eta = max_eta+1e-15
+                tree_panels_temp(panel_count+loc)%mid_eta = 0.5*(min_eta + max_eta)
+            enddo
+
             ! sanity check to make sure all points are assigned
             total = 0
             do j = 1, kids
@@ -389,26 +432,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     enddo
 
     do i = 1, panel_count
-        ! loc = tree_panels(i)%points_inside(1) ! shrink panels
-        ! min_xi = point_xi(loc)
-        ! max_xi = point_xi(loc)
-        ! min_eta = point_eta(loc)
-        ! max_eta = point_eta(loc)
-        ! do j = 1, tree_panels(i)%panel_point_count
-        !     loc = tree_panels(i)%points_inside(j)
-        !     min_xi = min(min_xi, point_xi(loc))
-        !     max_xi = max(max_xi, point_xi(loc))
-        !     min_eta = min(min_eta, point_eta(loc))
-        !     max_eta = max(max_eta, point_eta(loc))
-        ! enddo
-        ! mid_xi = 0.5*(min_xi+max_xi)
-        ! mid_eta = 0.5*(min_eta+max_eta)
-        ! tree_panels(i)%min_xi = min_xi-1e-15
-        ! tree_panels(i)%max_xi = max_xi+1e-15
-        ! tree_panels(i)%mid_xi = mid_xi
-        ! tree_panels(i)%min_eta = min_eta-1e-15
-        ! tree_panels(i)%max_eta = max_eta+1e-15
-        ! tree_panels(i)%mid_eta = mid_eta
         ! compute the furthest distance from panel center to vertex for each panel
         min_xi = tree_panels(i)%min_xi
         mid_xi = tree_panels(i)%mid_xi
