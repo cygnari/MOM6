@@ -271,11 +271,11 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
 
     ! shrink panels
     do i = 1, panel_count
-        index = tree_panels_temp(i)%points_inside(1)
-        min_xi = point_xi(index)
-        max_xi = point_xi(index)
-        min_eta = point_eta(index)
-        max_eta = point_eta(index)
+        ! index = tree_panels_temp(i)%points_inside(1)
+        min_xi = 3.0
+        max_xi = -3.0
+        min_eta = 3.0
+        max_eta = -3.0
         do j = 1, tree_panels_temp(i)%panel_point_count
             index = tree_panels_temp(i)%points_inside(j)
             min_xi = min(min_xi, point_xi(index))
@@ -394,11 +394,15 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
             END DO
 
             do j = 1, kids ! shrink panels
-                index = tree_panels_temp(panel_count+loc)%points_inside(1)
-                min_xi = point_xi(index)
-                max_xi = point_xi(index)
-                min_eta = point_eta(index)
-                max_eta = point_eta(index)
+                ! index = tree_panels_temp(panel_count+loc)%points_inside(1)
+                ! min_xi = point_xi(index)
+                ! max_xi = point_xi(index)
+                ! min_eta = point_eta(index)
+                ! max_eta = point_eta(index)
+                min_xi = 3.0
+                max_xi = -3.0
+                min_eta = 3.0
+                max_eta = -3.0
                 do k = 1, tree_panels_temp(panel_count+loc)%panel_point_count
                     index = tree_panels_temp(panel_count+loc)%points_inside(k)
                     min_xi = min(min_xi, point_xi(index))
@@ -455,43 +459,74 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
     enddo
 end subroutine tree_traversal
 
-subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs, point_leaf_panel)
-    ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
-    type(ocean_grid_type), intent(in) :: G
+! subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs, point_leaf_panel)
+!     ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
+!     type(ocean_grid_type), intent(in) :: G
+!     type(cube_panel), intent(inout) :: tree_panels(:)
+!     real, intent(in) :: x(:), y(:), z(:)
+!     integer, intent(in) :: levs
+!     integer, intent(inout) :: points_panels(:,:)
+!     integer, intent(out), allocatable :: point_leaf_panel(:)
+!     integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
+!     real :: xco, yco, zco
+
+!     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
+!     ic = iec-isc+1; jc = jec-jsc+1
+!     allocate(point_leaf_panel(size(x)))
+
+!     DO i = 1, size(x)
+!         level = 1
+!         j = 1
+!         jloop: DO ! do loop over tree panels
+!             IF (j == -1) THEN
+!                 exit jloop
+!             ELSE IF (tree_panels(j)%contains_point(x(i), y(i), z(i))) THEN
+!                 ! point i is contained in panel j
+!                 points_panels(level, i) = j
+!                 point_leaf_panel(i) = j
+!                 level = level + 1
+!                 tree_panels(j)%own_point_count = tree_panels(j)%own_point_count + 1
+!                 if (tree_panels(j)%is_leaf) then
+!                     exit jloop
+!                 else
+!                     j = tree_panels(j)%child_panels(1)
+!                 endif
+!             ELSE
+!                 j = j + 1
+!             END IF
+!         END DO jloop
+!     END DO
+! end subroutine assign_points_to_panels
+
+subroutine assign_points_to_panels(tree_panels, points_panels, point_leaf_panel, start_index, count)
     type(cube_panel), intent(inout) :: tree_panels(:)
-    real, intent(in) :: x(:), y(:), z(:)
-    integer, intent(in) :: levs
     integer, intent(inout) :: points_panels(:,:)
     integer, intent(out), allocatable :: point_leaf_panel(:)
-    integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
-    real :: xco, yco, zco
+    integer, intent(in) :: start_index, count
+    integer :: i, index, j, level
 
-    isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-    ic = iec-isc+1; jc = jec-jsc+1
-    allocate(point_leaf_panel(size(x)))
-
-    DO i = 1, size(x)
+    allocate(point_leaf_panel(count))
+    do i = 1, count
+        index = i + start_index - 1
         level = 1
         j = 1
-        jloop: DO ! do loop over tree panels
-            IF (j == -1) THEN
-                exit jloop
-            ELSE IF (tree_panels(j)%contains_point(x(i), y(i), z(i))) THEN
-                ! point i is contained in panel j
+        jloop: do
+            ! if (j == -1)
+            if (any(tree_panels(j)%points_inside == index)) then
                 points_panels(level, i) = j
                 point_leaf_panel(i) = j
                 level = level + 1
                 tree_panels(j)%own_point_count = tree_panels(j)%own_point_count + 1
-                if (tree_panels(j)%is_leaf) then
+                if (tree_panels(j)%is_leaf) then 
                     exit jloop
                 else
                     j = tree_panels(j)%child_panels(1)
                 endif
-            ELSE
+            else
                 j = j + 1
-            END IF
-        END DO jloop
-    END DO
+            endif
+        enddo jloop
+    enddo
 end subroutine assign_points_to_panels
 
 subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panels, x, y, z, theta, cluster_thresh, point_count, base_panels_source) ! for tree code mode
@@ -1078,8 +1113,10 @@ subroutine sal_conv_init(sal_ct, G, param_file)
 
         allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
         ! finds which panels contain the computational domain points
-        call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, &
-                                        max_level, sal_ct%point_leaf_panel) 
+        ! call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, &
+        !                                 max_level, sal_ct%point_leaf_panel) 
+
+        call assign_points_to_panels(sal_ct%tree_struct, sal_ct%points_panels, sal_ct%point_leaf_panel, sal_ct%indexsg(sal_ct%id+1), sal_ct%own_ocean_points)
 
         print *, "SAL Conv init: interaction list computation"
         ! compute the interaction lists for the target points in the target domain
