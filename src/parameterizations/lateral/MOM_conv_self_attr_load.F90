@@ -203,13 +203,14 @@ logical function contains_point(self, x, y, z) result(contains)
     end if
 end function contains_point
 
-subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_count)
+subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_count, base_panels)
     ! constructs cubed sphere tree of points
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
     type(cube_panel), allocatable, intent(out) :: tree_panels(:)
     type(cube_panel), allocatable :: tree_panels_temp(:)
     integer, intent(in) :: cluster_thresh, point_count
     real, intent(in) :: xg(:), yg(:), zg(:)
+    integer, intent(out) :: base_panels
     real :: pi, xval, yval, zval, min_xi, mid_xi, max_xi, min_eta, mid_eta, max_eta, xi, eta
     integer, allocatable :: curr_loc(:), temp(:), point_panel(:), panel_points(:), face_id(:), panel_id(:)
     integer :: face, i, panel_count, j, count, index, k
@@ -289,6 +290,8 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels_temp(i)%max_eta = max_eta+1e-15
         tree_panels_temp(i)%mid_eta = 0.5*(min_eta + max_eta)
     enddo
+
+    base_panels = panel_count
 
     i = 1
     deallocate(panel_points)
@@ -491,11 +494,11 @@ subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs,
     END DO
 end subroutine assign_points_to_panels
 
-subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panels, x, y, z, theta, cluster_thresh, point_count) ! for tree code mode
+subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panels, x, y, z, theta, cluster_thresh, point_count, base_panels_source) ! for tree code mode
     type(interaction_pair), intent(out), allocatable :: pp_interactions(:), pc_interactions(:)
     type(cube_panel), intent(in) :: tree_panels(:)
     real, intent(in) :: x(:), y(:), z(:), theta
-    integer, intent(in) :: point_count, cluster_thresh
+    integer, intent(in) :: point_count, cluster_thresh, base_panels_source
     integer, allocatable :: source_index(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
     integer :: interaction_count, pp_count, pc_count, i, j, tt_count, k, curr_loc, i_s, c_s, l
@@ -512,11 +515,9 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
 
     do i = 1, point_count
         tt_count = 0
-        do k = 1, min(6, size(tree_panels))
-            if (tree_panels(k)%parent_panel == -1) then
-                source_index(k) = k
-                tt_count = tt_count + 1
-            endif 
+        do k = 1, base_panels_source
+            source_index(k) = k
+            tt_count = tt_count + 1
         enddo
         curr_loc = 1
         xco = x(i)
@@ -577,11 +578,11 @@ subroutine interaction_list_compute(pp_interactions, pc_interactions, tree_panel
     enddo
 end subroutine interaction_list_compute
 
-subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, source_tree, target_tree, theta, cluster_thresh, ppc) ! for fmm mode
+subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, source_tree, target_tree, theta, cluster_thresh, ppc, base_panels_source, base_panels_target) ! for fmm mode
     type(interaction_pair), allocatable, intent(out) :: pp_ints(:), pc_ints(:), cp_ints(:), cc_ints(:)
     type(cube_panel), intent(in) :: source_tree(:), target_tree(:)
     real, intent(in) :: theta
-    integer, intent(in) :: cluster_thresh, ppc
+    integer, intent(in) :: cluster_thresh, ppc, base_panels_source, base_panels_target
     integer :: i, j, tree_traverse_count, curr_loc, pp_count, pc_count, cp_count, cc_count, i_t, i_s, c_t, c_s, int_count, id
     integer, allocatable :: source_index(:), target_index(:), loc(:)
     type(interaction_pair), allocatable :: interaction_lists_temp(:)
@@ -601,16 +602,12 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     id = PE_here()
 
     if (ppc > 0) then
-        do i = 1, 6 ! source index
-            if (source_tree(i)%level == 0) then
-                do j = 1, min(6, size(target_tree)) ! target index
-                    if (target_tree(j)%level == 0) then
-                        tree_traverse_count = tree_traverse_count + 1
-                        source_index(tree_traverse_count) = i
-                        target_index(tree_traverse_count) = j
-                    endif
-                enddo
-            endif
+        do i = 1, base_panels_source
+            do j = 1, base_panels_target
+                tree_traverse_count = tree_traverse_count + 1
+                source_index(tree_traverse_count) = i
+                target_index(tree_traverse_count) = j
+            enddo
         enddo
 
         do while (curr_loc <= tree_traverse_count)
@@ -959,6 +956,7 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     real, allocatable :: xg(:,:), yg(:,:), zg(:,:), xc(:,:), yc(:,:), zc(:,:), xt(:,:), yt(:,:), zt(:,:)
     real, allocatable :: xg1d(:), yg1d(:), zg1d(:), xc1d(:), yc1d(:), zc1d(:), xt1d(:), yt1d(:), zt1d(:)
     real :: lat, lon, colat, x, y, z, pi, theta
+    integer :: base_panels_source, base_panels_target
 
 # include "version_variable.h"
     character(len=40) :: mdl = "MOM_conv_self_attr_load" ! This module's name.
@@ -1065,11 +1063,11 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         print *, "SAL Conv init: tree traversal"
 
         ! xg/yg/zg is now a copy of all the points from all the processors
-        call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount) ! constructs cubed sphere tree
+        call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount, base_panels_source) ! constructs cubed sphere tree
         max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
 
         if (sal_ct%use_fmm) then
-            call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count) ! constructs tree of targets
+            call tree_traversal(G, sal_ct%tree_struct_targets, xc1d, yc1d, zc1d, sal_ct%cluster_thresh, count, base_panels_target) ! constructs tree of targets
             do i = 1, size(sal_ct%tree_struct_targets)
                 if (sal_ct%tree_struct_targets(i)%panel_point_count .ne. size(sal_ct%tree_struct_targets(i)%points_inside)) then
                     print *, sal_ct%id, i, sal_ct%tree_struct_targets(i)%panel_point_count, &
@@ -1088,10 +1086,10 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         if (sal_ct%use_fmm) then
             call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, &
                                             sal_ct%cc_interactions, sal_ct%tree_struct, sal_ct%tree_struct_targets, &
-                                            theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
+                                            theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points, base_panels_source, base_panels_target)
         else
             call interaction_list_compute(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%tree_struct, xc1d, &
-                                            yc1d, zc1d, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points)
+                                            yc1d, zc1d, theta, sal_ct%cluster_thresh, sal_ct%own_ocean_points, base_panels_source)
         endif
         call sync_PEs()
 
@@ -1438,7 +1436,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    cons = -7.029770573725803e-9/2.0 ! modify this
+    cons = -7.029770573725803e-9/3.0 ! modify this
     eps=1e-4
 
     sal_x = 0.0
