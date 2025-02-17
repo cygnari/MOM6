@@ -36,8 +36,8 @@ type, private :: cube_panel
     integer :: panel_point_count = 0
     integer :: own_point_count = 0 ! number of owned source/target points inside this panel
 
-    contains
-        procedure :: contains_point
+    ! contains
+    !     procedure :: contains_point
 end type cube_panel
 
 type, private :: interaction_pair 
@@ -184,24 +184,24 @@ SUBROUTINE xyz_from_xieta(x, y, z, xi, eta, face)
     END IF
 end subroutine xyz_from_xieta
 
-logical function contains_point(self, x, y, z) result(contains)
-    class(cube_panel), intent(in) :: self
-    real, intent(in) :: x, y, z
-    integer :: face
-    real :: xi, eta
-    face = face_from_xyz(x, y, z)
-    if (face == self%face) then
-        call xieta_from_xyz(x, y, z, xi, eta, face)
-        if ((xi >= self%min_xi) .and. (xi < self%max_xi) .and. (eta >= self%min_eta) &
-                        .and. (eta < self%max_eta)) then
-            contains = .true.
-        else
-            contains = .false.
-        end if
-    else 
-        contains = .false.
-    end if
-end function contains_point
+! logical function contains_point(self, x, y, z) result(contains)
+!     class(cube_panel), intent(in) :: self
+!     real, intent(in) :: x, y, z
+!     integer :: face
+!     real :: xi, eta
+!     face = face_from_xyz(x, y, z)
+!     if (face == self%face) then
+!         call xieta_from_xyz(x, y, z, xi, eta, face)
+!         if ((xi >= self%min_xi) .and. (xi < self%max_xi) .and. (eta >= self%min_eta) &
+!                         .and. (eta < self%max_eta)) then
+!             contains = .true.
+!         else
+!             contains = .false.
+!         end if
+!     else 
+!         contains = .false.
+!     end if
+! end function contains_point
 
 subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_count, base_panels)
     ! constructs cubed sphere tree of points
@@ -458,45 +458,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
         tree_panels(i)%radius = MAX(d1, d2, d3, d4)
     enddo
 end subroutine tree_traversal
-
-! subroutine assign_points_to_panels(G, tree_panels, x, y, z, points_panels, levs, point_leaf_panel)
-!     ! finds the panels containing the points in the computational domain, for the purposes of later computing proxy source potentials
-!     type(ocean_grid_type), intent(in) :: G
-!     type(cube_panel), intent(inout) :: tree_panels(:)
-!     real, intent(in) :: x(:), y(:), z(:)
-!     integer, intent(in) :: levs
-!     integer, intent(inout) :: points_panels(:,:)
-!     integer, intent(out), allocatable :: point_leaf_panel(:)
-!     integer :: level, i, j, k, isc, iec, jsc, jec, ic, jc
-!     real :: xco, yco, zco
-
-!     isc = G%isc; iec = G%iec; jsc = G%jsc; jec = G%jec
-!     ic = iec-isc+1; jc = jec-jsc+1
-!     allocate(point_leaf_panel(size(x)))
-
-!     DO i = 1, size(x)
-!         level = 1
-!         j = 1
-!         jloop: DO ! do loop over tree panels
-!             IF (j == -1) THEN
-!                 exit jloop
-!             ELSE IF (tree_panels(j)%contains_point(x(i), y(i), z(i))) THEN
-!                 ! point i is contained in panel j
-!                 points_panels(level, i) = j
-!                 point_leaf_panel(i) = j
-!                 level = level + 1
-!                 tree_panels(j)%own_point_count = tree_panels(j)%own_point_count + 1
-!                 if (tree_panels(j)%is_leaf) then
-!                     exit jloop
-!                 else
-!                     j = tree_panels(j)%child_panels(1)
-!                 endif
-!             ELSE
-!                 j = j + 1
-!             END IF
-!         END DO jloop
-!     END DO
-! end subroutine assign_points_to_panels
 
 subroutine assign_points_to_panels(tree_panels, points_panels, point_leaf_panel, start_index, count)
     type(cube_panel), intent(inout) :: tree_panels(:)
@@ -975,7 +936,6 @@ subroutine calculate_communications(sal_ct, xg, yg, zg, G)
             end if
         enddo treeloop
     enddo
-    ! allocate(sal_ct%e_ssh(sal_ct%own_ocean_points+sal_ct%unowned_sources))
 end subroutine calculate_communications
 
 subroutine sal_conv_init(sal_ct, G, param_file)
@@ -1473,7 +1433,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    cons = -7.029770573725803e-9/2.0 ! modify this
+    cons = -7.029770573725803e-9/1.0 ! modify this
     eps=1e-4
 
     sal_x = 0.0
