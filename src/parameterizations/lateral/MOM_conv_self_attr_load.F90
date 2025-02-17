@@ -35,9 +35,6 @@ type, private :: cube_panel
     integer, allocatable :: relabeled_points_inside(:)
     integer :: panel_point_count = 0
     integer :: own_point_count = 0 ! number of owned source/target points inside this panel
-
-    ! contains
-    !     procedure :: contains_point
 end type cube_panel
 
 type, private :: interaction_pair 
@@ -54,7 +51,6 @@ type, public :: SAL_conv_type ; private
     logical :: reprod_sum !< True if use reproducible global sums
     logical :: use_fmm !< True if run in FMM mode, using cluster-particle and cluster-cluster interactions 
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
-    ! real, allocatable :: e_ssh(:)
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(interaction_pair), allocatable :: cp_interactions(:), cc_interactions(:)
     type(cube_panel), allocatable :: tree_struct(:)
@@ -184,25 +180,6 @@ SUBROUTINE xyz_from_xieta(x, y, z, xi, eta, face)
     END IF
 end subroutine xyz_from_xieta
 
-! logical function contains_point(self, x, y, z) result(contains)
-!     class(cube_panel), intent(in) :: self
-!     real, intent(in) :: x, y, z
-!     integer :: face
-!     real :: xi, eta
-!     face = face_from_xyz(x, y, z)
-!     if (face == self%face) then
-!         call xieta_from_xyz(x, y, z, xi, eta, face)
-!         if ((xi >= self%min_xi) .and. (xi < self%max_xi) .and. (eta >= self%min_eta) &
-!                         .and. (eta < self%max_eta)) then
-!             contains = .true.
-!         else
-!             contains = .false.
-!         end if
-!     else 
-!         contains = .false.
-!     end if
-! end function contains_point
-
 subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_count, base_panels)
     ! constructs cubed sphere tree of points
     type(ocean_grid_type), intent(inout) :: G ! ocean grid
@@ -271,7 +248,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
 
     ! shrink panels
     do i = 1, panel_count
-        ! index = tree_panels_temp(i)%points_inside(1)
         min_xi = 3.0
         max_xi = -3.0
         min_eta = 3.0
@@ -394,11 +370,6 @@ subroutine tree_traversal(G, tree_panels, xg, yg, zg, cluster_thresh, point_coun
             END DO
 
             do j = 1, kids ! shrink panels
-                ! index = tree_panels_temp(panel_count+loc)%points_inside(1)
-                ! min_xi = point_xi(index)
-                ! max_xi = point_xi(index)
-                ! min_eta = point_eta(index)
-                ! max_eta = point_eta(index)
                 min_xi = 3.0
                 max_xi = -3.0
                 min_eta = 3.0
@@ -472,7 +443,6 @@ subroutine assign_points_to_panels(tree_panels, points_panels, point_leaf_panel,
         level = 1
         j = 1
         jloop: do
-            ! if (j == -1)
             if (any(tree_panels(j)%points_inside == index)) then
                 points_panels(level, i) = j
                 point_leaf_panel(i) = j
