@@ -1407,7 +1407,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     sal_y = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
-        if (g > 0.987988) then
+        if (g > 0.9) then
             mp = 2.0-2.0*g
             sqp = sqrt(mp)
             p1 = (1.0-6.21196)/(sqp*mp+eps)
