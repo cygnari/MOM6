@@ -694,75 +694,6 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
     enddo
 end subroutine interaction_list_compute_fmm
 
-recursive subroutine quicksort(array)
-    integer, intent(inout) :: array(:)
-    integer :: x, t, start = 1, last, i, j
-    last = size(array)
-    x = array((start+last)/2)
-    i = start
-    j = last
-    do
-        do while (array(i) < x)
-            i = i+1
-        enddo
-        do while(x < array(j))
-            j = j-1
-        enddo
-        if (i>=j) exit
-        t = array(i); array(i) = array(j); array(j) = t
-        i = i+1
-        j = j-1
-    enddo
-    if (start<i-1) call quicksort(array(start:i-1))
-    if (j+1<last) call quicksort(array(j+1:last))
-end subroutine quicksort
-
-subroutine fmm_relabel_pp(pp_ints, pp_ints_relabeled, source_tree, target_tree, own_points)
-    type(interaction_pair), intent(in) :: pp_ints(:)
-    type(fmm_pp_interaction), intent(out), allocatable :: pp_ints_relabeled(:)
-    type(cube_panel), intent(in) :: source_tree(:), target_tree(:)
-    integer, intent(in) :: own_points
-    integer, allocatable :: point_ints(:), temp_sources(:)
-    integer :: i_s, i_t, i, sc, j, tc, index_targ, loc, k
-
-    ! count how many pp interactions for each target point
-    allocate(point_ints(own_points), source=0)
-    do i = 1, size(pp_ints)
-        i_s = pp_ints(i)%index_source
-        i_t = pp_ints(i)%index_target
-        sc = source_tree(i_s)%panel_point_count
-        tc = target_tree(i_t)%panel_point_count
-        do j = 1, tc
-            index_targ = target_tree(i_t)%relabeled_points_inside(j)
-            point_ints(index_targ) = point_ints(index_targ) + sc
-        enddo
-    enddo
-
-    ! find all the pp source points for each target point
-    allocate(pp_ints_relabeled(own_points))
-    do i = 1, own_points
-        pp_ints_relabeled(i)%index_target = i
-        allocate(temp_sources(point_ints(i)), source=0)
-        loc = 0
-        do j = 1, size(pp_ints) ! loop over pp interactions, find which ones contain target i
-            i_t = pp_ints(j)%index_target
-            if (any(target_tree(i_t)%relabeled_points_inside == i)) then
-                ! interaction contains target i
-                i_s = pp_ints(j)%index_source
-                sc = source_tree(i_s)%panel_point_count
-                do k = 1, sc
-                    loc = loc + 1
-                    temp_sources(loc) = source_tree(i_s)%relabeled_points_inside(k)
-                enddo
-            endif
-        enddo
-        call quicksort(temp_sources)
-        allocate(pp_ints_relabeled(i)%index_source(point_ints(i)))
-        pp_ints_relabeled(i)%index_source = temp_sources
-        deallocate(temp_sources)
-    enddo
-end subroutine fmm_relabel_pp
-
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! calculate communications for particle particle interactions
     type(sal_conv_type), intent(inout) :: sal_ct
@@ -1119,9 +1050,6 @@ subroutine sal_conv_init(sal_ct, G, param_file)
 
         allocate(sal_ct%points_panels(max_level+1, ic*jc), source=-1)
         ! finds which panels contain the computational domain points
-        ! call assign_points_to_panels(G, sal_ct%tree_struct, xc1d, yc1d, zc1d, sal_ct%points_panels, &
-        !                                 max_level, sal_ct%point_leaf_panel) 
-
         call assign_points_to_panels(sal_ct%tree_struct, sal_ct%points_panels, sal_ct%point_leaf_panel, sal_ct%indexsg(sal_ct%id+1), sal_ct%own_ocean_points)
 
         print *, "SAL Conv init: interaction list computation"
@@ -1139,10 +1067,6 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         print *, "SAL Conv init: communication calculations"
         ! compute communication patterns 
         call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
-
-        if (sal_ct%use_fmm) then
-            call fmm_relabel_pp(sal_ct%pp_interactions, sal_ct%fmm_pp_interactions, sal_ct%tree_struct, sal_ct%tree_struct_targets, sal_ct%own_ocean_points)
-        endif
 
         do i = 1, sal_ct%own_ocean_points
             sal_ct%e_xs(i) = xc1d(i)
@@ -1747,57 +1671,39 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
 
     call cpu_clock_begin(id_clock_SAL_pp_comp)
 
-    do i = 1, size(sal_ct%fmm_pp_interactions) 
-        i_tp = sal_ct%fmm_pp_interactions(i)%index_target
-        i_ti = sal_ct%one_d_to_2d_i(i_tp)
-        i_tj = sal_ct%one_d_to_2d_j(i_tp)
-        x = sal_ct%e_xs(i_tp)
-        y = sal_ct%e_ys(i_tp)
-        z = sal_ct%e_zs(i_tp)
-        do j = 1, size(sal_ct%fmm_pp_interactions(i)%index_source)
-            i_sp = sal_ct%fmm_pp_interactions(i)%index_source(j)
-            sx = sal_ct%e_xs(i_sp)
-            sy = sal_ct%e_ys(i_sp)
-            sz = sal_ct%e_zs(i_sp)
-            ssh = e_ssh(i_sp)
-            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
-            sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
-            sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
+    do i = 1, size(sal_ct%pp_interactions)
+        i_s = sal_ct%pp_interactions(i)%index_source
+        i_t = sal_ct%pp_interactions(i)%index_target
+        sc = sal_ct%tree_struct(i_s)%panel_point_count
+        allocate(sxs(sc))
+        allocate(sys(sc))
+        allocate(szs(sc))
+        allocate(ssshs(sc))
+        do j = 1, sc
+            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+            sxs(j) = sal_ct%e_xs(i_sp)
+            sys(j) = sal_ct%e_ys(i_sp)
+            szs(j) = sal_ct%e_zs(i_sp)
+            ssshs(j) = e_ssh(i_sp)
         enddo
+        do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
+            i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
+            i_ti = sal_ct%one_d_to_2d_i(i_tp)
+            i_tj = sal_ct%one_d_to_2d_j(i_tp)
+            x = sal_ct%e_xs(i_tp)
+            y = sal_ct%e_ys(i_tp)
+            z = sal_ct%e_zs(i_tp)
+            do j = 1, sc             
+                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
+                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
+            enddo
+        enddo
+        deallocate(sxs)
+        deallocate(sys)
+        deallocate(szs)
+        deallocate(ssshs)
     enddo
-    ! do i = 1, size(sal_ct%pp_interactions)
-    !     i_s = sal_ct%pp_interactions(i)%index_source
-    !     i_t = sal_ct%pp_interactions(i)%index_target
-    !     sc = sal_ct%tree_struct(i_s)%panel_point_count
-    !     allocate(sxs(sc))
-    !     allocate(sys(sc))
-    !     allocate(szs(sc))
-    !     allocate(ssshs(sc))
-    !     do j = 1, sc
-    !         i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-    !         sxs(j) = sal_ct%e_xs(i_sp)
-    !         sys(j) = sal_ct%e_ys(i_sp)
-    !         szs(j) = sal_ct%e_zs(i_sp)
-    !         ssshs(j) = e_ssh(i_sp)
-    !     enddo
-    !     do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
-    !         i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
-    !         i_ti = sal_ct%one_d_to_2d_i(i_tp)
-    !         i_tj = sal_ct%one_d_to_2d_j(i_tp)
-    !         x = sal_ct%e_xs(i_tp)
-    !         y = sal_ct%e_ys(i_tp)
-    !         z = sal_ct%e_zs(i_tp)
-    !         do j = 1, sc             
-    !             call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
-    !             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
-    !             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
-    !         enddo
-    !     enddo
-    !     deallocate(sxs)
-    !     deallocate(sys)
-    !     deallocate(szs)
-    !     deallocate(ssshs)
-    ! enddo
     call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute_fmm
 
