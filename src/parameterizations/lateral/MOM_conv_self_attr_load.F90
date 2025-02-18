@@ -44,12 +44,6 @@ type, private :: interaction_pair
     integer :: interact_type ! 0 for PP, 1 for PC, 2 for CP, 3 for CC
 end type interaction_pair
 
-type, private :: fmm_pp_interaction
-    ! data type for reorganized fmm pp interactions
-    integer :: index_target
-    integer, allocatable :: index_source(:)
-end type fmm_pp_interaction
-
 type, public :: SAL_conv_type ; private
     ! type to contain all the needed data structures
     ! including the cubed sphere tree
@@ -59,7 +53,6 @@ type, public :: SAL_conv_type ; private
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(interaction_pair), allocatable :: cp_interactions(:), cc_interactions(:)
-    type(fmm_pp_interaction), allocatable :: fmm_pp_interactions(:)
     type(cube_panel), allocatable :: tree_struct(:)
     type(cube_panel), allocatable :: tree_struct_targets(:) ! tree structure for own target points, used for FMM
     integer, allocatable :: points_panels(:,:) ! points_panels(lev, i)=k means that point i is contained in panel k at level lev
@@ -1892,13 +1885,6 @@ subroutine sal_conv_end(sal_ct)
                 if (allocated(sal_ct%tree_struct_targets(i)%relabeled_points_inside)) &
                     deallocate(sal_ct%tree_struct_targets(i)%relabeled_points_inside)
             enddo
-
-            if (allocated(sal_ct%fmm_pp_interactions)) then
-                do i = 1, size(sal_ct%fmm_pp_interactions)
-                    deallocate(sal_ct%fmm_pp_interactions(i)%index_source)
-                enddo
-                deallocate(sal_ct%fmm_pp_interactions)
-            endif
 
             if (allocated(sal_ct%tree_struct_targets)) deallocate(sal_ct%tree_struct_targets)
         endif
