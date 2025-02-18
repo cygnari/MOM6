@@ -1407,24 +1407,24 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     sal_y = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
-        if (g > 0.9) then
-            mp = 2.0-2.0*g
-            sqp = sqrt(mp)
-            p1 = (1.0-6.21196)/(sqp*mp+eps)
-            p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
-            x32m = 1.0-tz*tz
-            mp2iv = (p1+p2)*cons/sqrt(x32m)
-            sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
-            sal_x = (tx*sy-ty*sx)*mp2iv
-        endif
-        ! mp = 2.0-2.0*g
-        ! sqp = sqrt(mp)
-        ! p1 = (1.0-6.21196)/(sqp*mp+eps)
-        ! p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
-        ! x32m = 1.0-tz*tz
-        ! mp2iv = (p1+p2)*cons/sqrt(x32m)
-        ! sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
-        ! sal_x = (tx*sy-ty*sx)*mp2iv
+        ! if (g > 0.9) then
+        !     mp = 2.0-2.0*g
+        !     sqp = sqrt(mp)
+        !     p1 = (1.0-6.21196)/(sqp*mp+eps)
+        !     p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
+        !     x32m = 1.0-tz*tz
+        !     mp2iv = (p1+p2)*cons/sqrt(x32m)
+        !     sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
+        !     sal_x = (tx*sy-ty*sx)*mp2iv
+        ! endif
+        mp = 2.0-2.0*g
+        sqp = sqrt(mp)
+        p1 = (1.0-6.21196)/(sqp*mp+eps)
+        p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
+        x32m = 1.0-tz*tz
+        mp2iv = (p1+p2)*cons/sqrt(x32m)
+        sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
+        sal_x = (tx*sy-ty*sx)*mp2iv
     END IF
 end subroutine sal_grad_gfunc
 
