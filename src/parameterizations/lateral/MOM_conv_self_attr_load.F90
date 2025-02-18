@@ -756,7 +756,10 @@ subroutine fmm_relabel_pp(pp_ints, pp_ints_relabeled, source_tree, target_tree, 
                 enddo
             endif
         enddo
-
+        call quicksort(temp_sources)
+        allocate(pp_ints_relabeled(i)%index_source(point_ints(i)))
+        pp_ints_relabeled(i)%index_source = temp_sources
+        deallocate(temp_sources)
     enddo
 end subroutine fmm_relabel_pp
 
@@ -1136,6 +1139,10 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         print *, "SAL Conv init: communication calculations"
         ! compute communication patterns 
         call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
+
+        if (sal_ct%use_fmm) then
+            call fmm_relabel_pp(sal_ct%pp_interactions, sal_ct%fmm_pp_interactions, sal_ct%tree_struct, sal_ct%tree_struct_targets, sal_ct%own_ocean_points)
+        endif
 
         do i = 1, sal_ct%own_ocean_points
             sal_ct%e_xs(i) = xc1d(i)
@@ -1740,39 +1747,57 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
 
     call cpu_clock_begin(id_clock_SAL_pp_comp)
 
-    do i = 1, size(sal_ct%pp_interactions)
-        i_s = sal_ct%pp_interactions(i)%index_source
-        i_t = sal_ct%pp_interactions(i)%index_target
-        sc = sal_ct%tree_struct(i_s)%panel_point_count
-        allocate(sxs(sc))
-        allocate(sys(sc))
-        allocate(szs(sc))
-        allocate(ssshs(sc))
-        do j = 1, sc
-            i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
-            sxs(j) = sal_ct%e_xs(i_sp)
-            sys(j) = sal_ct%e_ys(i_sp)
-            szs(j) = sal_ct%e_zs(i_sp)
-            ssshs(j) = e_ssh(i_sp)
+    do i = 1, size(sal_ct%fmm_pp_interactions) 
+        i_tp = sal_ct%fmm_pp_interactions(i)%index_target
+        i_ti = sal_ct%one_d_to_2d_i(i_tp)
+        i_tj = sal_ct%one_d_to_2d_j(i_tp)
+        x = sal_ct%e_xs(i_tp)
+        y = sal_ct%e_ys(i_tp)
+        z = sal_ct%e_zs(i_tp)
+        do j = 1, size(sal_ct%fmm_pp_interactions(i)%index_source)
+            i_sp = sal_ct%fmm_pp_interactions(i)%index_source(j)
+            sx = sal_ct%e_xs(i_sp)
+            sy = sal_ct%e_ys(i_sp)
+            sz = sal_ct%e_zs(i_sp)
+            ssh = e_ssh(i_sp)
+            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
+            sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
+            sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
         enddo
-        do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
-            i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
-            i_ti = sal_ct%one_d_to_2d_i(i_tp)
-            i_tj = sal_ct%one_d_to_2d_j(i_tp)
-            x = sal_ct%e_xs(i_tp)
-            y = sal_ct%e_ys(i_tp)
-            z = sal_ct%e_zs(i_tp)
-            do j = 1, sc             
-                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
-                sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
-                sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
-            enddo
-        enddo
-        deallocate(sxs)
-        deallocate(sys)
-        deallocate(szs)
-        deallocate(ssshs)
     enddo
+    ! do i = 1, size(sal_ct%pp_interactions)
+    !     i_s = sal_ct%pp_interactions(i)%index_source
+    !     i_t = sal_ct%pp_interactions(i)%index_target
+    !     sc = sal_ct%tree_struct(i_s)%panel_point_count
+    !     allocate(sxs(sc))
+    !     allocate(sys(sc))
+    !     allocate(szs(sc))
+    !     allocate(ssshs(sc))
+    !     do j = 1, sc
+    !         i_sp = sal_ct%tree_struct(i_s)%relabeled_points_inside(j)
+    !         sxs(j) = sal_ct%e_xs(i_sp)
+    !         sys(j) = sal_ct%e_ys(i_sp)
+    !         szs(j) = sal_ct%e_zs(i_sp)
+    !         ssshs(j) = e_ssh(i_sp)
+    !     enddo
+    !     do k = 1, sal_ct%tree_struct_targets(i_t)%panel_point_count
+    !         i_tp = sal_ct%tree_struct_targets(i_t)%points_inside(k)
+    !         i_ti = sal_ct%one_d_to_2d_i(i_tp)
+    !         i_tj = sal_ct%one_d_to_2d_j(i_tp)
+    !         x = sal_ct%e_xs(i_tp)
+    !         y = sal_ct%e_ys(i_tp)
+    !         z = sal_ct%e_zs(i_tp)
+    !         do j = 1, sc             
+    !             call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+    !             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
+    !             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
+    !         enddo
+    !     enddo
+    !     deallocate(sxs)
+    !     deallocate(sys)
+    !     deallocate(szs)
+    !     deallocate(ssshs)
+    ! enddo
     call cpu_clock_end(id_clock_SAL_pp_comp)
 end subroutine pp_interaction_compute_fmm
 
