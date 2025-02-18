@@ -38,11 +38,17 @@ type, private :: cube_panel
 end type cube_panel
 
 type, private :: interaction_pair 
-    ! data type to represent a pp/pc interaction between a point and a cube panel
+    ! data type to represent a pp/pc/cp/cc interaction between a point/panel and a cube panel
     integer :: index_target
     integer :: index_source 
     integer :: interact_type ! 0 for PP, 1 for PC, 2 for CP, 3 for CC
 end type interaction_pair
+
+type, private :: fmm_pp_interaction
+    ! data type for reorganized fmm pp interactions
+    integer :: index_target
+    integer, allocatable :: index_source(:)
+end type fmm_pp_interaction
 
 type, public :: SAL_conv_type ; private
     ! type to contain all the needed data structures
@@ -53,6 +59,7 @@ type, public :: SAL_conv_type ; private
     real, allocatable :: e_xs(:), e_ys(:), e_zs(:) ! x/y/z coordinates of unowned points needed for particle-particle interactions
     type(interaction_pair), allocatable :: pp_interactions(:), pc_interactions(:) ! interaction lists
     type(interaction_pair), allocatable :: cp_interactions(:), cc_interactions(:)
+    type(fmm_pp_interaction), allocatable :: fmm_pp_interactions(:)
     type(cube_panel), allocatable :: tree_struct(:)
     type(cube_panel), allocatable :: tree_struct_targets(:) ! tree structure for own target points, used for FMM
     integer, allocatable :: points_panels(:,:) ! points_panels(lev, i)=k means that point i is contained in panel k at level lev
@@ -686,6 +693,72 @@ subroutine interaction_list_compute_fmm(pp_ints, pc_ints, cp_ints, cc_ints, sour
         endif
     enddo
 end subroutine interaction_list_compute_fmm
+
+recursive subroutine quicksort(array)
+    integer, intent(inout) :: array(:)
+    integer :: x, t, start = 1, last, i, j
+    last = size(array)
+    x = array((start+last)/2)
+    i = start
+    j = last
+    do
+        do while (array(i) < x)
+            i = i+1
+        enddo
+        do while(x < array(j))
+            j = j-1
+        enddo
+        if (i>=j) exit
+        t = array(i); array(i) = array(j); array(j) = t
+        i = i+1
+        j = j-1
+    enddo
+    if (start<i-1) call quicksort(array(start:i-1))
+    if (j+1<last) call quicksort(array(j+1:last))
+end subroutine quicksort
+
+subroutine fmm_relabel_pp(pp_ints, pp_ints_relabeled, source_tree, target_tree, own_points)
+    type(interaction_pair), intent(in) :: pp_ints(:)
+    type(fmm_pp_interaction), intent(out), allocatable :: pp_ints_relabeled(:)
+    type(cube_panel), intent(in) :: source_tree(:), target_tree(:)
+    integer, intent(in) :: own_points
+    integer, allocatable :: point_ints(:), temp_sources(:)
+    integer :: i_s, i_t, i, sc, j, tc, index_targ, loc, k
+
+    ! count how many pp interactions for each target point
+    allocate(point_ints(own_points), source=0)
+    do i = 1, size(pp_ints)
+        i_s = pp_ints(i)%index_source
+        i_t = pp_ints(i)%index_target
+        sc = source_tree(i_s)%panel_point_count
+        tc = target_tree(i_t)%panel_point_count
+        do j = 1, tc
+            index_targ = target_tree(i_t)%relabeled_points_inside(j)
+            point_ints(index_targ) = point_ints(index_targ) + sc
+        enddo
+    enddo
+
+    ! find all the pp source points for each target point
+    allocate(pp_ints_relabeled(own_points))
+    do i = 1, own_points
+        pp_ints_relabeled(i)%index_target = i
+        allocate(temp_sources(point_ints(i)), source=0)
+        loc = 0
+        do j = 1, size(pp_ints) ! loop over pp interactions, find which ones contain target i
+            i_t = pp_ints(j)%index_target
+            if (any(target_tree(i_t)%relabeled_points_inside == i)) then
+                ! interaction contains target i
+                i_s = pp_ints(j)%index_source
+                sc = source_tree(i_s)%panel_point_count
+                do k = 1, sc
+                    loc = loc + 1
+                    temp_sources(loc) = source_tree(i_s)%relabeled_points_inside(k)
+                enddo
+            endif
+        enddo
+
+    enddo
+end subroutine fmm_relabel_pp
 
 subroutine calculate_communications(sal_ct, xg, yg, zg, G)
     ! calculate communications for particle particle interactions
@@ -1403,7 +1476,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    cons = -7.029770573725803e-9/1.0 ! modify this
+    cons = -7.029770573725803e-9/3.0 ! modify this
     eps=1e-4
 
     sal_x = 0.0
@@ -1888,6 +1961,13 @@ subroutine sal_conv_end(sal_ct)
                 if (allocated(sal_ct%tree_struct_targets(i)%relabeled_points_inside)) &
                     deallocate(sal_ct%tree_struct_targets(i)%relabeled_points_inside)
             enddo
+
+            if (allocated(sal_ct%fmm_pp_interactions)) then
+                do i = 1, size(sal_ct%fmm_pp_interactions)
+                    deallocate(sal_ct%fmm_pp_interactions(i)%index_source)
+                enddo
+                deallocate(sal_ct%fmm_pp_interactions)
+            endif
 
             if (allocated(sal_ct%tree_struct_targets)) deallocate(sal_ct%tree_struct_targets)
         endif
