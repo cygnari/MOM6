@@ -71,6 +71,8 @@ type, public :: SAL_conv_type ; private
     integer, allocatable :: point_leaf_panel(:) ! which leaf panel contains point i
     integer :: cluster_thresh
     logical :: use_sal_conv = .false.
+    logical :: use_farfield = .true. ! whether to use pc/cp/cc
+    real :: trunc_thresh ! radius to truncate the green's function
 end type SAL_conv_type
 
 integer :: id_clock_SAL   !< CPU clock for self-attraction and loading
@@ -922,6 +924,7 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     real, allocatable :: xg1d(:), yg1d(:), zg1d(:), xc1d(:), yc1d(:), zc1d(:), xt1d(:), yt1d(:), zt1d(:)
     real :: lat, lon, colat, x, y, z, pi, theta
     integer :: base_panels_source, base_panels_target
+    logical :: sht
 
 # include "version_variable.h"
     character(len=40) :: mdl = "MOM_conv_self_attr_load" ! This module's name.
@@ -936,6 +939,10 @@ subroutine sal_conv_init(sal_ct, G, param_file)
                     "Convolution SAL Tree Code Reproducing sum mode", default=.false.)
     call get_param(param_file, mdl, "SAL_CONVOLUTION", sal_ct%use_sal_conv, &
                     "Whether or not to use SAL convolution", default=.false.)
+    call get_param(param_file, mdl, "SAL_HARMONICS", sht, "SHT", default=.false., do_not_log=.True.)
+    call get_param(param_file, mdl, "CONV_SAL_TRUNC_THRESH", sal_ct%trunc_thresh, &
+                    "Truncation threshold for Conv SAL Greens Function", units="m m-1", default=0.9)
+    sal_ct%use_farfield = .not. sht
     if (.not. sal_ct%reprod_sum) then
         call get_param(param_file, mdl, "CONV_SAL_FMM", sal_ct%use_fmm, &
                     "Convolution SAL FMM mode or not, FMM is incompatible with reproducing sum", default=.true.)
@@ -1395,8 +1402,8 @@ subroutine proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights) !
     call cpu_clock_end(id_clock_SAL_upward_pass)
 end subroutine proxy_source_compute_reprod
 
-subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact of eps and cons more
-    real, intent(in) :: tx, ty, tz, sx, sy, sz
+subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc) 
+    real, intent(in) :: tx, ty, tz, sx, sy, sz, trunc
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
@@ -1407,7 +1414,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) ! explore impact
     sal_y = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
-        if (g > 0.9) then
+        if (g > trunc) then
             mp = 2.0-2.0*g
             sqp = sqrt(mp)
             p1 = (1.0-6.21196)/(sqp*mp+eps)
@@ -1465,7 +1472,7 @@ subroutine pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
             do j = 1, sal_ct%interp_degree+1
                 xi = cheb_xi(j)
                 call xyz_from_xieta(cx, cy, cz, xi, eta, sal_ct%tree_struct(i_s)%face)
-                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y)
+                call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
                 offset = offset+1
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset) ! reproducing sum needed
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
@@ -1514,7 +1521,7 @@ subroutine pc_interaction_compute_fmm(sal_ct, G, proxy_source_weights, sal_x, sa
                 do j = 1, sal_ct%interp_degree+1
                     xi = cheb_xi(j)
                     call xyz_from_xieta(cx, cy, cz, xi, eta, sal_ct%tree_struct(i_s)%face)
-                    call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y)
+                    call sal_grad_gfunc(x, y, z, cx, cy, cz, sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
                     offset = offset+1
                     sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*source_proxy_weights(offset) 
                     sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*source_proxy_weights(offset)
@@ -1564,7 +1571,7 @@ subroutine cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_wei
                         x_s = cheb_x_s(k)
                         call xyz_from_xieta(s_x, s_y, s_z, x_s, e_s, sal_ct%tree_struct(i_s)%face)
                         offset_s = offset_s + 1
-                        call sal_grad_gfunc(t_x, t_y, t_z, s_x, s_y, s_z, sal_grad_x, sal_grad_y)
+                        call sal_grad_gfunc(t_x, t_y, t_z, s_x, s_y, s_z, sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
                         proxy_target_weights_x(m,j,i_t) = proxy_target_weights_x(m,j,i_t) + &
                                                 proxy_source_weights(shift_s+offset_s)*sal_grad_x
                         proxy_target_weights_y(m,j,i_t) = proxy_target_weights_y(m,j,i_t) + &
@@ -1614,7 +1621,7 @@ subroutine cp_interaction_compute(sal_ct, G, eta, e_ssh, proxy_target_weights_x,
                 do l = 1, sal_ct%interp_degree+1 ! target xi loop
                     xi_t = cheb_xi(l)
                     call xyz_from_xieta(tx, ty, tz, xi_t, eta_t, sal_ct%tree_struct_targets(i_t)%face)
-                    call sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_grad_x, sal_grad_y)
+                    call sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
                     proxy_target_weights_x(l,k,i_t) = proxy_target_weights_x(l,k,i_t)+sal_grad_x*ssh
                     proxy_target_weights_y(l,k,i_t) = proxy_target_weights_y(l,k,i_t)+sal_grad_y*ssh
                 enddo
@@ -1652,7 +1659,7 @@ subroutine pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
             sy = sal_ct%e_ys(i_sp)
             sz = sal_ct%e_zs(i_sp)
             ssh = e_ssh(i_sp)
-            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y)
+            call sal_grad_gfunc(x, y, z, sx, sy, sz, sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
             sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssh
             sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssh
         enddo
@@ -1697,7 +1704,7 @@ subroutine pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
             y = sal_ct%e_ys(i_tp)
             z = sal_ct%e_zs(i_tp)
             do j = 1, sc             
-                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y)
+                call sal_grad_gfunc(x, y, z, sxs(j), sys(j), szs(j), sal_grad_x, sal_grad_y, sal_ct%trunc_thresh)
                 sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + sal_grad_x*ssshs(j)
                 sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + sal_grad_y*ssshs(j)
             enddo
@@ -1793,41 +1800,48 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
         if (sal_ct%use_fmm) then ! fmm with upward and downward pass
             call cpu_clock_begin(id_clock_SAL_fmm)
             ! compute proxy source weights
-            source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
-            target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
-            allocate(proxy_source_weights(source_size), source=0.0)
-            allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
-                        size(sal_ct%tree_struct_targets)), source=0.0)
-            allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
-                        size(sal_ct%tree_struct_targets)), source=0.0)
+            if (sal_ct%use_farfield) then
+                source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
+                target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
+                allocate(proxy_source_weights(source_size), source=0.0)
+                allocate(proxy_target_weights_x(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
+                            size(sal_ct%tree_struct_targets)), source=0.0)
+                allocate(proxy_target_weights_y(sal_ct%interp_degree+1, sal_ct%interp_degree+1, &
+                            size(sal_ct%tree_struct_targets)), source=0.0)
+
+                ! upward pass
+                call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+
+                ! perform PC and CC interactions
+                call cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_weights_x, proxy_target_weights_y)
+                call pc_interaction_compute_fmm(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+                
+                call cp_interaction_compute(sal_ct, G, eta, e_ssh, proxy_target_weights_x, proxy_target_weights_y)
+                ! downward pass
+                call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
+            endif
+            
             ! do SSH communication needed for interactions
             allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
             call ssh_communications(sal_ct, G, eta, e_ssh)
-            ! upward pass
-            call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
-
-            ! perform PC and CC interactions
-            call cc_interaction_compute(sal_ct, proxy_source_weights, proxy_target_weights_x, proxy_target_weights_y)
-            call pc_interaction_compute_fmm(sal_ct, G, proxy_source_weights, sal_x, sal_y)
             
-            call cp_interaction_compute(sal_ct, G, eta, e_ssh, proxy_target_weights_x, proxy_target_weights_y)
-            ! downward pass
-            call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
             ! compute PP interactions for target domain
             call pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
             call cpu_clock_end(id_clock_SAL_fmm)
         else ! standard tree code
             call cpu_clock_begin(id_clock_SAL_tc)
-            ! compute proxy source weights for computational domain
-            source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
-            allocate(proxy_source_weights(source_size), source=0.0)
-            ! do SSH communication needed for interactions
-            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
-            call ssh_communications(sal_ct, G, eta, e_ssh)
-            if (sal_ct%reprod_sum) then
-                call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
-            else
-                call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+            if (sal_ct%use_farfield) then
+                ! compute proxy source weights for computational domain
+                source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
+                allocate(proxy_source_weights(source_size), source=0.0)
+                if (sal_ct%reprod_sum) then
+                    call proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights)
+                else
+                    call proxy_source_compute_nonrep(sal_ct, G, e_ssh, proxy_source_weights)
+                endif
+
+                ! compute PC interactions for target domain
+                call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
             endif
 
             ! if (id == 0) then ! testing for reproducing sum
@@ -1836,8 +1850,9 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
             !     enddo
             ! endif
 
-            ! compute PC interactions for target domain
-            call pc_interaction_compute(sal_ct, G, proxy_source_weights, sal_x, sal_y)
+            ! do SSH communication needed for interactions
+            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
+            call ssh_communications(sal_ct, G, eta, e_ssh)
 
             ! compute PP interactions for target domain
             call pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
