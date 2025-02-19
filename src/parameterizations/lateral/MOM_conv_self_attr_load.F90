@@ -940,8 +940,12 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call get_param(param_file, mdl, "SAL_CONVOLUTION", sal_ct%use_sal_conv, &
                     "Whether or not to use SAL convolution", default=.false.)
     call get_param(param_file, mdl, "SAL_HARMONICS", sht, "SHT", default=.false., do_not_log=.True.)
-    call get_param(param_file, mdl, "CONV_SAL_TRUNC_THRESH", sal_ct%trunc_thresh, &
-                    "Truncation threshold for Conv SAL Greens Function", units="m m-1", default=0.9)
+    if (sht) then
+        call get_param(param_file, mdl, "CONV_SAL_TRUNC_THRESH", sal_ct%trunc_thresh, &
+                        "Truncation threshold for Conv SAL Greens Function", units="m m-1", default=0.9, do_not_log=.True.)
+    else
+        sal_ct%trunc_thresh = -2.0
+    endif
     sal_ct%use_farfield = .not. sht
     if (.not. sal_ct%reprod_sum) then
         call get_param(param_file, mdl, "CONV_SAL_FMM", sal_ct%use_fmm, &
@@ -1403,7 +1407,11 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    cons = -7.029770573725803e-9/1.0 ! modify this
+    if (trunc > -1.0) then
+        cons = -7.029770573725803e-9 
+    else
+        cons = -7.029770573725803e-9/3.0 ! modify this
+    endif
     eps=1e-4
 
     sal_x = 0.0
