@@ -1032,8 +1032,6 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         call sum_across_PEs(yg1d, pointcount)
         call sum_across_PEs(zg1d, pointcount)
 
-        print *, "SAL Conv init: tree traversal"
-
         ! xg/yg/zg is now a copy of all the points from all the processors
         call tree_traversal(G, sal_ct%tree_struct, xg1d, yg1d, zg1d, sal_ct%cluster_thresh, pointcount, base_panels_source) ! constructs cubed sphere tree
         max_level = sal_ct%tree_struct(size(sal_ct%tree_struct))%level
@@ -1052,7 +1050,6 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         ! finds which panels contain the computational domain points
         call assign_points_to_panels(sal_ct%tree_struct, sal_ct%points_panels, sal_ct%point_leaf_panel, sal_ct%indexsg(sal_ct%id+1), sal_ct%own_ocean_points)
 
-        print *, "SAL Conv init: interaction list computation"
         ! compute the interaction lists for the target points in the target domain
         if (sal_ct%use_fmm) then
             call interaction_list_compute_fmm(sal_ct%pp_interactions, sal_ct%pc_interactions, sal_ct%cp_interactions, &
@@ -1064,7 +1061,6 @@ subroutine sal_conv_init(sal_ct, G, param_file)
         endif
         call sync_PEs()
 
-        print *, "SAL Conv init: communication calculations"
         ! compute communication patterns 
         call calculate_communications(sal_ct, xg1d, yg1d, zg1d, G)
 
@@ -1820,7 +1816,7 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
                 ! downward pass
                 call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
             endif
-            
+
             ! do SSH communication needed for interactions
             allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
             call ssh_communications(sal_ct, G, eta, e_ssh)
