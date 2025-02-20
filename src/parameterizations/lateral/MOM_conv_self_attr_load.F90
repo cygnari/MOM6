@@ -1407,27 +1407,27 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
 
-    if (trunc > -1.0) then
-        cons = -7.029770573725803e-9 
-    else
-        cons = -7.029770573725803e-9/3.0 ! modify this
-    endif
+    ! if (trunc > -1.0) then
+    !     cons = -7.029770573725803e-9 
+    ! else
+    cons = -7.029770573725803e-9/3.0 ! modify this
+    ! endif
     eps=1e-4
 
     sal_x = 0.0
     sal_y = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
         g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
-        if (g > trunc) then
-            mp = 2.0-2.0*g
-            sqp = sqrt(mp)
-            p1 = (1.0-6.21196)/(sqp*mp+eps)
-            p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
-            x32m = 1.0-tz*tz
-            mp2iv = (p1+p2)*cons/sqrt(x32m)
-            sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
-            sal_x = (tx*sy-ty*sx)*mp2iv
-        endif
+        ! if (g > trunc) then
+        mp = 2.0-2.0*g
+        sqp = sqrt(mp)
+        p1 = (1.0-6.21196)/(sqp*mp+eps)
+        p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
+        x32m = 1.0-tz*tz
+        mp2iv = (p1+p2)*cons/sqrt(x32m)
+        sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
+        sal_x = (tx*sy-ty*sx)*mp2iv
+        ! endif
         ! mp = 2.0-2.0*g
         ! sqp = sqrt(mp)
         ! p1 = (1.0-6.21196)/(sqp*mp+eps)
