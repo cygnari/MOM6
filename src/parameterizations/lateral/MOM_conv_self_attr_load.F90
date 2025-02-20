@@ -1803,8 +1803,11 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
 
         if (sal_ct%use_fmm) then ! fmm with upward and downward pass
             call cpu_clock_begin(id_clock_SAL_fmm)
-            ! compute proxy source weights
+            ! do SSH communication needed for interactions
+            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
+            call ssh_communications(sal_ct, G, eta, e_ssh)
             if (sal_ct%use_farfield) then
+                ! compute proxy source weights
                 source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
                 target_weights = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct_targets)
                 allocate(proxy_source_weights(source_size), source=0.0)
@@ -1825,15 +1828,16 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
                 call fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, proxy_target_weights_y)
             endif
 
-            ! do SSH communication needed for interactions
-            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
-            call ssh_communications(sal_ct, G, eta, e_ssh)
+            
             
             ! compute PP interactions for target domain
             call pp_interaction_compute_fmm(sal_ct, G, sal_x, sal_y, e_ssh)
             call cpu_clock_end(id_clock_SAL_fmm)
         else ! standard tree code
             call cpu_clock_begin(id_clock_SAL_tc)
+            ! do SSH communication needed for interactions
+            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
+            call ssh_communications(sal_ct, G, eta, e_ssh)
             if (sal_ct%use_farfield) then
                 ! compute proxy source weights for computational domain
                 source_size = (sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)*size(sal_ct%tree_struct)
@@ -1853,10 +1857,6 @@ subroutine sal_conv_eval(sal_ct, G, eta, sal_x, sal_y)
             !         print *, proxy_source_weights(i)
             !     enddo
             ! endif
-
-            ! do SSH communication needed for interactions
-            allocate(e_ssh(sal_ct%unowned_sources+sal_ct%own_ocean_points), source=0.0)
-            call ssh_communications(sal_ct, G, eta, e_ssh)
 
             ! compute PP interactions for target domain
             call pp_interaction_compute(sal_ct, G, sal_x, sal_y, e_ssh)
