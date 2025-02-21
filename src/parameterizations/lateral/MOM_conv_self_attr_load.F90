@@ -1402,7 +1402,7 @@ subroutine proxy_source_compute_reprod(sal_ct, G, e_ssh, proxy_source_weights) !
     call cpu_clock_end(id_clock_SAL_upward_pass)
 end subroutine proxy_source_compute_reprod
 
-subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y) 
+subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc) 
     real, intent(in) :: tx, ty, tz, sx, sy, sz, trunc
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
@@ -1745,48 +1745,48 @@ subroutine fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, pr
         max_xi_p = sal_ct%tree_struct_targets(i)%max_xi
         min_eta_p = sal_ct%tree_struct_targets(i)%min_eta
         max_eta_p = sal_ct%tree_struct_targets(i)%max_eta
-        ! if (.not. sal_ct%tree_struct_targets(i)%is_leaf) then 
-        !     ! interpolate from parent panel to child panel
-        !     do j = 1, sal_ct%tree_struct_targets(i)%child_panel_count
-        !         i_c = sal_ct%tree_struct_targets(i)%child_panels(j)
-        !         min_xi_c = sal_ct%tree_struct_targets(i_c)%min_xi
-        !         max_xi_c = sal_ct%tree_struct_targets(i_c)%max_xi
-        !         min_eta_c = sal_ct%tree_struct_targets(i_c)%min_eta
-        !         max_eta_c = sal_ct%tree_struct_targets(i_c)%max_eta
-        !         call bli_interp_points_shift(cheb_xi_c, min_xi_c, max_xi_c, sal_ct%interp_degree)
-        !         call bli_interp_points_shift(cheb_eta_c, min_eta_c, max_eta_c, sal_ct%interp_degree)
-        !         shift_c = (i_c-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-        !         offset_c = 0
-        !         do k = 1, sal_ct%interp_degree+1 ! child panel eta loop
-        !             eta = cheb_eta_c(k)
-        !             do l = 1, sal_ct%interp_degree+1 ! child panel xi loop
-        !                 offset_c =  offset_c + 1
-        !                 xi = cheb_xi_c(l)
-        !                 call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
-        !                 proxy_target_weights_x(:,:,i_c) = proxy_target_weights_x(:,:,i_c) + basis_vals * proxy_target_weights_x(:,:,i)
-        !                 proxy_target_weights_y(:,:,i_c) = proxy_target_weights_y(:,:,i_c) + basis_vals * proxy_target_weights_y(:,:,i)
-        !             enddo
-        !         enddo
-        !     enddo
-        ! else 
-        ! interpolate from leaf panel to target points inside
-        do j = 1, sal_ct%tree_struct_targets(i)%panel_point_count
-            i_t = sal_ct%tree_struct_targets(i)%points_inside(j)
-            i_ti = sal_ct%one_d_to_2d_i(i_t)
-            i_tj = sal_ct%one_d_to_2d_j(i_t)
-            tx = sal_ct%e_xs(i_t)
-            ty = sal_ct%e_ys(i_t)
-            tz = sal_ct%e_zs(i_t)
-            call xieta_from_xyz(tx, ty, tz, xi, eta)
-            call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
-            do k = 1, sal_ct%interp_degree+1 ! eta loop
-                do l = 1, sal_ct%interp_degree+1 ! xi loop
-                    sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + proxy_target_weights_x(l,k,i)*basis_vals(l,k)
-                    sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + proxy_target_weights_y(l,k,i)*basis_vals(l,k)
+        if (.not. sal_ct%tree_struct_targets(i)%is_leaf) then 
+            ! interpolate from parent panel to child panel
+            do j = 1, sal_ct%tree_struct_targets(i)%child_panel_count
+                i_c = sal_ct%tree_struct_targets(i)%child_panels(j)
+                min_xi_c = sal_ct%tree_struct_targets(i_c)%min_xi
+                max_xi_c = sal_ct%tree_struct_targets(i_c)%max_xi
+                min_eta_c = sal_ct%tree_struct_targets(i_c)%min_eta
+                max_eta_c = sal_ct%tree_struct_targets(i_c)%max_eta
+                call bli_interp_points_shift(cheb_xi_c, min_xi_c, max_xi_c, sal_ct%interp_degree)
+                call bli_interp_points_shift(cheb_eta_c, min_eta_c, max_eta_c, sal_ct%interp_degree)
+                ! shift_c = (i_c-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
+                ! offset_c = 0
+                do k = 1, sal_ct%interp_degree+1 ! child panel eta loop
+                    eta = cheb_eta_c(k)
+                    do l = 1, sal_ct%interp_degree+1 ! child panel xi loop
+                        ! offset_c =  offset_c + 1
+                        xi = cheb_xi_c(l)
+                        call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+                        proxy_target_weights_x(l,k,i_c) = proxy_target_weights_x(l,k,i_c) + sum(basis_vals * proxy_target_weights_x(:,:,i))
+                        proxy_target_weights_y(l,k,i_c) = proxy_target_weights_y(l,k,i_c) + sum(basis_vals * proxy_target_weights_y(:,:,i))
+                    enddo
                 enddo
             enddo
-        enddo
-        ! endif
+        else 
+        ! interpolate from leaf panel to target points inside
+            do j = 1, sal_ct%tree_struct_targets(i)%panel_point_count
+                i_t = sal_ct%tree_struct_targets(i)%points_inside(j)
+                i_ti = sal_ct%one_d_to_2d_i(i_t)
+                i_tj = sal_ct%one_d_to_2d_j(i_t)
+                tx = sal_ct%e_xs(i_t)
+                ty = sal_ct%e_ys(i_t)
+                tz = sal_ct%e_zs(i_t)
+                call xieta_from_xyz(tx, ty, tz, xi, eta)
+                call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
+                do k = 1, sal_ct%interp_degree+1 ! eta loop
+                    do l = 1, sal_ct%interp_degree+1 ! xi loop
+                        sal_x(i_ti, i_tj) = sal_x(i_ti, i_tj) + proxy_target_weights_x(l,k,i)*basis_vals(l,k)
+                        sal_y(i_ti, i_tj) = sal_y(i_ti, i_tj) + proxy_target_weights_y(l,k,i)*basis_vals(l,k)
+                    enddo
+                enddo
+            enddo
+        endif
     enddo iloop
     call cpu_clock_end(id_clock_SAL_downward_pass)
 end subroutine fmm_downward_pass
