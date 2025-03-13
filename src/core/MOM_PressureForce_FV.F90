@@ -3,7 +3,6 @@ module MOM_PressureForce_FV
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_debugging, only : hchksum
 use MOM_diag_mediator, only : post_data, register_diag_field
 use MOM_diag_mediator, only : safe_alloc_ptr, diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
@@ -138,7 +137,9 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     za, &       ! The geopotential anomaly (i.e. g*e + alpha_0*pressure) at the
                 ! interface atop a layer [L2 T-2 ~> m2 s-2].
     e_sal_x, &  ! e_sal x gradient component [V ~> m s-1]
-    e_sal_y     ! e_sal y gradient component [V ~> m s-1]
+    e_sal_y, &  ! e_sal y gradient component [V ~> m s-1]
+    sal_x, &
+    sal_y
 
   real, dimension(SZI_(G)) :: Rho_cv_BL !  The coordinate potential density in the deepest variable
                 ! density near-surface layer [R ~> kg m-3].
@@ -330,23 +331,30 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                  - max(-G%bathyT(i,j)-G%Z_ref, 0.0)
     enddo ; enddo
     call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-    call sal_conv_eval(CS%SAL_ConvCSp, G, SSH, e_sal_x, e_sal_y)
+    call sal_conv_eval(CS%SAL_ConvCSp, G, SSH, sal_x, sal_y)
 
     do j = Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      e_sal_x(i, j) = e_sal_x(i, j)*GV%g_Earth
-      e_sal_y(i, j) = e_sal_y(i, j)*GV%g_Earth
+      !$OMP parallel do default(shared)
+      sal_x(i, j) = sal_x(i, j)*GV%g_Earth
+      sal_y(i, j) = sal_y(i, j)*GV%g_Earth
+      e_sal(i, j) = e_sal(i, j)*GV%g_Earth
     enddo ; enddo
 
-    ! call hchksum(e_sal_x, "SAL x derivative", G%HI, haloshift=1)
-    ! call hchksum(e_sal_y, "SAL y derivative", G%HI, haloshift=1)
-    ! call hchksum(e_sal, "SAL potential", G%HI, haloshift=1)
-
-    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
+    do j=js,je ; do I=Isq,Ieq ! x derivative
       !$OMP parallel do default(shared)
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        za(i,j) = za(i,j) - GV%g_Earth * e_sal(i,j)
-      enddo ; enddo
-    endif
+      e_sal_x(I,j)=0.5*(sal_x(i+1,j)+sal_x(i,j))+(2.0*G%IdxCu(I,j))*(e_sal(i+1,j)-e_sal(i,j))
+    enddo ; enddo
+    do J=Jsq,Jeq ; do i=is,ie ! y derivative
+      !$OMP parallel do default(shared)
+      e_sal_y(i,J)=0.5*(sal_y(i,j+1)+sal_y(i,j))+(2.0*G%IdyCv(i,J))*(e_sal(i,j+1)-e_sal(i,j))
+    enddo ; enddo
+
+    ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
+    !   !$OMP parallel do default(shared)
+    !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    !     za(i,j) = za(i,j) - e_sal(i,j)
+    !   enddo ; enddo
+    ! endif
   endif
 
   ! Calculate and add the tidal geopotential anomaly.
@@ -418,7 +426,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                       (za(i+1,j)*dp(i+1,j) + intp_dza(i+1,j,k))) + &
                      ((dp(i+1,j) - dp(i,j)) * intx_za(I,j) - &
                       (p(i+1,j,K) - p(i,j,K)) * intx_dza(I,j,k)) ) * &
-                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect)) +0.5*(e_sal_x(i+1,j)+e_sal_x(i,j))
+                   (2.0*G%IdxCu(I,j) / ((dp(i,j) + dp(i+1,j)) + dp_neglect)) +e_sal_x(I,j)
     enddo ; enddo
     !$OMP parallel do default(shared)
     do J=Jsq,Jeq ; do i=is,ie ! y derivative
@@ -427,7 +435,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                      (za(i,j+1)*dp(i,j+1) + intp_dza(i,j+1,k))) + &
                     ((dp(i,j+1) - dp(i,j)) * inty_za(i,J) - &
                      (p(i,j+1,K) - p(i,j,K)) * inty_dza(i,J,k))) * &
-                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect)) +0.5*(e_sal_y(i,j+1)+e_sal_y(i,j))
+                    (2.0*G%IdyCv(i,J) / ((dp(i,j) + dp(i,j+1)) + dp_neglect)) +e_sal_y(i,J)
     enddo ; enddo
 
     if (CS%GFS_scale < 1.0) then
@@ -469,7 +477,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   if (CS%id_e_tide_eq>0) call post_data(CS%id_e_tide_eq, e_tide_eq, CS%diag)
   if (CS%id_e_tide_sal>0) call post_data(CS%id_e_tide_sal, e_tide_sal, CS%diag)
   if (CS%id_e_sal_x>0) call post_data(CS%id_e_sal_x, e_sal_x, CS%diag)
-  if (CS%id_e_sal_x>0) call post_data(CS%id_e_sal_y, e_sal_y, CS%diag)
+  if (CS%id_e_sal_y>0) call post_data(CS%id_e_sal_y, e_sal_y, CS%diag)
 
 end subroutine PressureForce_FV_nonBouss
 

@@ -932,7 +932,7 @@ subroutine sal_conv_init(sal_ct, G, param_file)
     call get_param(param_file, mdl, "CONV_SAL_THETA", theta, &
                     "Theta parameter for Convolution SAL Tree Code", units="m m-1", default=0.9)
     call get_param(param_file, mdl, "CONV_SAL_CLUSTER_SIZE", sal_ct%cluster_thresh, &
-                    "Cluster threshold size for Convolution SAL Tree Code", default=150)
+                    "Cluster threshold size for Convolution SAL Tree Code", default=50)
     call get_param(param_file, mdl, "CONV_SAL_INTERP_DEGREE", sal_ct%interp_degree, &
                     "Interpolation degree for Convolution SAL Tree Code", default=2)
     call get_param(param_file, mdl, "CONV_SAL_REPRODUCING", sal_ct%reprod_sum, &
@@ -1405,7 +1405,7 @@ end subroutine proxy_source_compute_reprod
 subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc) 
     real, intent(in) :: tx, ty, tz, sx, sy, sz, trunc
     real, intent(out) :: sal_x, sal_y
-    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps
+    real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps, coeff
 
     if (trunc > -1.0) then
         cons = -7.029770573725803e-9 
@@ -1417,14 +1417,23 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     sal_x = 0.0
     sal_y = 0.0
     IF ((abs(tz - 1.0) > 1e-15) .and. (abs(tz+1.0) > 1e-15)) THEN
-        g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! floating point check
+        g = max(min(tx*sx+ty*sy+tz*sz, 1.0), -1.0) ! prevent floating point errors
         if (g > trunc) then
+            if (trunc > -1.0) then
+                if (g > trunc+(1-trunc)*0.1) then
+                    coeff=1.0
+                else
+                    coeff=trunc+(1-trunc)*0.1-g
+                endif
+            else
+                coeff=1.0
+            endif
             mp = 2.0-2.0*g
             sqp = sqrt(mp)
             p1 = (1.0-6.21196)/(sqp*mp+eps)
-            p2 = (2.7+6.12)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) ! check 6.12 vs 6.0
+            p2 = (2.685+6.18)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) 
             x32m = 1.0-tz*tz
-            mp2iv = (p1+p2)*cons/sqrt(x32m)
+            mp2iv = (p1+p2)*cons*coeff/sqrt(x32m)
             sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
             sal_x = (tx*sy-ty*sx)*mp2iv
         endif
@@ -1734,7 +1743,7 @@ subroutine fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, pr
     real, intent(inout) :: proxy_target_weights_x(:,:,:), proxy_target_weights_y(:,:,:)
     real :: pi, min_xi_p, max_xi_p, min_eta_p, max_eta_p, min_xi_c, max_xi_c, min_eta_c, max_eta_c, xi, eta, tx, ty, tz
     real :: lat, lon, colat, min_xi, max_xi, min_eta, max_eta
-    integer :: i, i_c, shift_c, offset_c, k, l, m, n, i_t, i_ti, i_tj, j
+    integer :: i, i_c, k, l, m, n, i_t, i_ti, i_tj, j
     real, allocatable :: cheb_xi_c(:), cheb_eta_c(:), basis_vals(:,:) 
 
     pi = 4.0*DATAN(1.0)
@@ -1755,12 +1764,9 @@ subroutine fmm_downward_pass(sal_ct, G, sal_x, sal_y, proxy_target_weights_x, pr
                 max_eta_c = sal_ct%tree_struct_targets(i_c)%max_eta
                 call bli_interp_points_shift(cheb_xi_c, min_xi_c, max_xi_c, sal_ct%interp_degree)
                 call bli_interp_points_shift(cheb_eta_c, min_eta_c, max_eta_c, sal_ct%interp_degree)
-                ! shift_c = (i_c-1)*(sal_ct%interp_degree+1)*(sal_ct%interp_degree+1)
-                ! offset_c = 0
                 do k = 1, sal_ct%interp_degree+1 ! child panel eta loop
                     eta = cheb_eta_c(k)
                     do l = 1, sal_ct%interp_degree+1 ! child panel xi loop
-                        ! offset_c =  offset_c + 1
                         xi = cheb_xi_c(l)
                         call interp_vals_bli(basis_vals, xi, eta, min_xi_p, max_xi_p, min_eta_p, max_eta_p, sal_ct%interp_degree)
                         proxy_target_weights_x(l,k,i_c) = proxy_target_weights_x(l,k,i_c) + sum(basis_vals * proxy_target_weights_x(:,:,i))
