@@ -1410,7 +1410,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     if (trunc > -1.0) then
         cons = -7.029770573725803e-9 
     else
-        cons = -7.029770573725803e-9/2.0 ! modify this
+        cons = -7.029770573725803e-9/3.0 ! modify this
     endif
     ! eps=1e-4
     ! cons = -7.029770573725803e-9 
