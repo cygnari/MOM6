@@ -1407,12 +1407,13 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     real, intent(out) :: sal_x, sal_y
     real :: g, mp, sqrtp, cons, sqp, p1, p2, x32m, mp2iv, eps, coeff
 
-    if (trunc > -1.0) then
-        cons = -7.029770573725803e-9 
-    else
-        cons = -7.029770573725803e-9/3.0 ! modify this
-    endif
+    ! if (trunc > -1.0) then
+    !     cons = -7.029770573725803e-9 
+    ! else
+    !     cons = -7.029770573725803e-9/3.0 ! modify this
+    ! endif
     ! eps=1e-4
+    cons = -7.029770573725803e-9 
 
     sal_x = 0.0
     sal_y = 0.0
