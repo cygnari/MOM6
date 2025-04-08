@@ -1412,7 +1412,7 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
     else
         cons = -7.029770573725803e-9/3.0 ! modify this
     endif
-    eps=1e-4
+    ! eps=1e-4
 
     sal_x = 0.0
     sal_y = 0.0
@@ -1428,14 +1428,19 @@ subroutine sal_grad_gfunc(tx, ty, tz, sx, sy, sz, sal_x, sal_y, trunc)
             else
                 coeff=1.0
             endif
-            mp = 2.0-2.0*g
-            sqp = sqrt(mp)
-            p1 = (1.0-6.21196)/(sqp*mp+eps)
-            p2 = (2.685+6.18)*(2*g+sqp) / (2.0*(g*g-1.0)+eps) 
-            x32m = 1.0-tz*tz
-            mp2iv = (p1+p2)*cons*coeff/sqrt(x32m)
-            sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
-            sal_x = (tx*sy-ty*sx)*mp2iv
+            if (g > 1.0-1e-10) then
+                sal_y = 0
+                sal_x = 0
+            else
+                mp = 2.0-2.0*g
+                sqp = sqrt(mp)
+                p1 = (1.0-6.21196)/(sqp*mp)
+                p2 = (2.685+6.18)*(2*g+sqp) / (2.0*(g*g-1.0)) 
+                x32m = 1.0-tz*tz
+                mp2iv = (p1+p2)*cons*coeff/sqrt(x32m)
+                sal_y = (sz*x32m-tz*(tx*sx+ty*sy))*mp2iv
+                sal_x = (tx*sy-ty*sx)*mp2iv
+            endif
         endif
         ! mp = 2.0-2.0*g
         ! sqp = sqrt(mp)

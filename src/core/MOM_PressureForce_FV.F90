@@ -136,10 +136,13 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                 ! account for a reduced gravity model [L2 T-2 ~> m2 s-2].
     za, &       ! The geopotential anomaly (i.e. g*e + alpha_0*pressure) at the
                 ! interface atop a layer [L2 T-2 ~> m2 s-2].
-    e_sal_x, &  ! e_sal x gradient component [V ~> m s-1]
-    e_sal_y, &  ! e_sal y gradient component [V ~> m s-1]
+    ! e_sal_x, &  ! e_sal x gradient component [V ~> m s-1]
+    ! e_sal_y, &  ! e_sal y gradient component [V ~> m s-1]
     sal_x, &
     sal_y
+
+  real, dimension(SZIB_(G),SZJ_(G)) :: e_sal_x ! SAL zonal acceleration [L T-2 ~> m s-2]
+  real, dimension(SZI_(G),SZJB_(G)) :: e_sal_y ! SAL zonal acceleration [L T-2 ~> m s-2]
 
   real, dimension(SZI_(G)) :: Rho_cv_BL !  The coordinate potential density in the deepest variable
                 ! density near-surface layer [R ~> kg m-3].
@@ -342,19 +345,21 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
 
     do j=js,je ; do I=Isq,Ieq ! x derivative
       !$OMP parallel do default(shared)
-      e_sal_x(I,j)=0.5*(sal_x(i+1,j)+sal_x(i,j))+(2.0*G%IdxCu(I,j))*(e_sal(i+1,j)-e_sal(i,j))
+      e_sal_x(I,j)=0.5*(sal_x(i+1,j)+sal_x(i,j))
+      ! +(2.0*G%IdxCu(I,j))*(e_sal(i+1,j)-e_sal(i,j))
     enddo ; enddo
     do J=Jsq,Jeq ; do i=is,ie ! y derivative
       !$OMP parallel do default(shared)
-      e_sal_y(i,J)=0.5*(sal_y(i,j+1)+sal_y(i,j))+(2.0*G%IdyCv(i,J))*(e_sal(i,j+1)-e_sal(i,j))
+      e_sal_y(i,J)=0.5*(sal_y(i,j+1)+sal_y(i,j))
+      ! +(2.0*G%IdyCv(i,J))*(e_sal(i,j+1)-e_sal(i,j))
     enddo ; enddo
 
-    ! if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
-    !   !$OMP parallel do default(shared)
-    !   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-    !     za(i,j) = za(i,j) - e_sal(i,j)
-    !   enddo ; enddo
-    ! endif
+    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        za(i,j) = za(i,j) - e_sal(i,j)
+      enddo ; enddo
+    endif
   endif
 
   ! Calculate and add the tidal geopotential anomaly.
@@ -1061,10 +1066,14 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
         'Equilibrium tides height anomaly', 'meter', conversion=US%Z_to_m)
     CS%id_e_tide_sal = register_diag_field('ocean_model', 'e_tide_sal', diag%axesT1, Time, &
         'Read-in tidal self-attraction and loading height anomaly', 'meter', conversion=US%Z_to_m)
-    CS%id_e_sal_x = register_diag_field('ocean_model', 'e_sal_x', diag%axest1, Time, &
-        'SAL x derivative', 'meter', conversion=US%Z_to_m)
-    CS%id_e_sal_y = register_diag_field('ocean_model', 'e_sal_y', diag%axest1, Time, &
-        'SAL y derivative', 'meter', conversion=US%Z_to_m)
+    ! CS%id_e_sal_x = register_diag_field('ocean_model', 'e_sal_x', diag%axest1, Time, &
+    !     'SAL x derivative', 'meter', conversion=US%Z_to_m)
+    ! CS%id_e_sal_y = register_diag_field('ocean_model', 'e_sal_y', diag%axest1, Time, &
+    !     'SAL y derivative', 'meter', conversion=US%Z_to_m)
+    CS%id_e_sal_x = register_diag_field('ocean_model', 'e_sal_x', diag%axesCuL, Time, &
+        'SAL zonal acceleration', 'm s-2', conversion=US%L_T2_to_m_s2)
+    CS%id_e_sal_y = register_diag_field('ocean_model', 'e_sal_y', diag%axesCvL, Time, &
+        'SAL meridional acceleration', 'm s-2', conversion=US%L_T2_to_m_s2)
   endif
 
   CS%GFS_scale = 1.0
