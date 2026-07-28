@@ -5,6 +5,7 @@
 !> A thin wrapper for Boussinesq/non-Boussinesq forms of the pressure force calculation.
 module MOM_PressureForce
 
+use MOM_conv_self_attr_load, only : SAL_Conv_CS
 use MOM_diag_mediator, only : diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_version, param_file_type
@@ -84,7 +85,8 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, p_atm, pb
 end subroutine Pressureforce
 
 !> Initialize the pressure force control structure
-subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL_CSp, tides_CSp)
+subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL_CSp, tides_CSp, &
+                              SAL_Conv_CSp)
   type(time_type), target, intent(in)    :: Time !< Current model time
   type(ocean_grid_type),   intent(in)    :: G    !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV   !< Vertical grid structure
@@ -95,6 +97,7 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL_CS
   type(accel_diag_ptrs),   pointer       :: ADp !< Acceleration diagnostic pointers
   type(SAL_CS),           intent(in), optional :: SAL_CSp !< SAL control structure
   type(tidal_forcing_CS), intent(in), optional :: tides_CSp !< Tide control structure
+  type(SAL_Conv_CS),      intent(in), optional :: SAL_Conv_CSp !< Convolution SAL control structure
 #include "version_variable.h"
   character(len=40)  :: mdl = "MOM_PressureForce" ! This module's name.
 
@@ -109,10 +112,10 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL_CS
 
   if (CS%Analytic_FV_PGF) then
     call PressureForce_FV_init(Time, G, GV, US, param_file, diag, &
-             CS%PressureForce_FV, ADp, SAL_CSp, tides_CSp)
+             CS%PressureForce_FV, ADp, SAL_CSp, tides_CSp, SAL_Conv_CSp)
   else
     call PressureForce_Mont_init(Time, G, GV, US, param_file, diag, &
-             CS%PressureForce_Mont, SAL_CSp, tides_CSp)
+             CS%PressureForce_Mont, SAL_CSp, tides_CSp, SAL_Conv_CSp)
   endif
 end subroutine PressureForce_init
 

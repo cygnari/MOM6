@@ -25,6 +25,7 @@ type, public :: sht_CS ; private
   integer :: ndegree !< Maximum degree of the spherical harmonics [nondim].
   integer :: lmax !< Number of associated Legendre polynomials of nonnegative m
                   !! [lmax=(ndegree+1)*(ndegree+2)/2] [nondim].
+  logical :: use_cesaro = .false. !< If true, use Cesaro summation to regularize the inverse transform
   real, allocatable :: cos_clatT(:,:) !< Precomputed cosine of colatitude at the t-cells [nondim].
   real, allocatable :: Pmm(:,:,:) !< Precomputed associated Legendre polynomials (m=n) at the t-cells [nondim].
   real, allocatable :: cos_lonT(:,:,:), & !< Precomputed cosine factors at the t-cells [nondim].
@@ -179,6 +180,7 @@ subroutine spherical_harmonics_inverse(G, CS, Snm_Re, Snm_Im, var, Nd)
   integer :: i, j, k
   integer :: is, ie, js, je, isd, ied, jsd, jed
   integer :: m, n, l
+  real    :: cesFac ! a multiplier to incorporate the effect of Cesaro summation [nondim]
 
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_spherical_harmonics " // &
     "spherical_harmonics_inverse: Module must be initialized before it is used.")
@@ -198,6 +200,10 @@ subroutine spherical_harmonics_inverse(G, CS, Snm_Re, Snm_Im, var, Nd)
 
   do m=0,Nmax
     mFac = sign(1.0, m-0.5)*0.5 + 1.5
+    if (CS%use_cesaro) then
+      cesFac = 1.0 - 1.0*m / (1.0*Nmax + 1.0)
+      mFac = mFac * cesFac
+    endif
     l = order2index(m, Nmax)
 
     do j=js,je ; do i=is,ie
@@ -255,6 +261,9 @@ subroutine spherical_harmonics_init(G, param_file, CS)
                  "If true, use reproducing sums (invariant to PE layout) in inverse transform "// &
                  "of spherical harmonics. Otherwise use a simple sum of floating point numbers. ", &
                  default=.False.)
+  call get_param(param_file, mdl, "SAL_SHT_CESARO", CS%use_cesaro, &
+                   "If true, use Cesaro summation in the inverse spherical harmonics transform"//&
+                   "for the SAL calculation.", default=.false.)
 
   ! Calculate recurrence relationship coefficients
   allocate(CS%a_recur(CS%ndegree+1, CS%ndegree+1), source=0.0)

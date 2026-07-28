@@ -76,7 +76,8 @@ use MOM_ALE, only : ALE_CS
 use MOM_barotropic, only : barotropic_CS
 use MOM_boundary_update, only : update_OBC_data, update_OBC_CS
 use MOM_continuity, only : continuity, continuity_init, continuity_CS, continuity_stencil
-use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS, CoriolisAdv_stencil
+use MOM_conv_self_attr_load, only : SAL_Conv_CS, sal_conv_init, sal_conv_end
+use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS, CoriolisAdv_stencil 
 use MOM_debugging, only : check_redundant
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
@@ -161,6 +162,8 @@ type, public :: MOM_dyn_unsplit_CS ; private
   type(set_visc_CS), pointer :: set_visc_CSp => NULL()
   !> A pointer to the SAL control structure
   type(SAL_CS) :: SAL_CSp
+  !> A pointer to the Convolution SAL control structure
+  type(SAL_Conv_CS) :: SAL_Conv_CSp
   !> A pointer to the tidal forcing control structure
   type(tidal_forcing_CS) :: tides_CSp
   !> A pointer to the ALE control structure.
@@ -690,9 +693,10 @@ subroutine initialize_dyn_unsplit(u, v, h, tv, Time, G, GV, US, param_file, diag
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   dyn_h_stencil = max(cont_stencil, CoriolisAdv_stencil(CS%CoriolisAdv))
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp)
+  if (CS%calculate_SAL) call sal_conv_init(CS%SAL_Conv_CSp, G, param_file)
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, CS%ADp, &
-                          CS%SAL_CSp, CS%tides_CSp)
+                          CS%SAL_CSp, CS%tides_CSp, CS%SAL_Conv_CSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, &
                      ntrunc, CS%vertvisc_CSp)
@@ -745,6 +749,7 @@ subroutine end_dyn_unsplit(CS)
   DEALLOC_(CS%PFu)   ; DEALLOC_(CS%PFv)
 
   if (CS%calculate_SAL) call SAL_end(CS%SAL_CSp)
+  if (CS%calculate_SAL) call sal_conv_end(CS%SAL_Conv_CSp)
   if (CS%use_tides) call tidal_forcing_end(CS%tides_CSp)
 
   deallocate(CS)
